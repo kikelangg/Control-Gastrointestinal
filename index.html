@@ -213,7 +213,7 @@
       <div>
         <div style="display:flex;align-items:baseline;gap:8px;">
           <div style="font-size:1.15rem;font-weight:700;">GastroTracker</div>
-          <span id="app-version" style="font-size:0.7rem;color:var(--muted);font-weight:500;">v0.2.1</span>
+          <span id="app-version" style="font-size:0.7rem;color:var(--muted);font-weight:500;">v1.0.0</span>
         </div>
         <div style="font-size:0.75rem;color:var(--muted);">Control gastrointestinal del grupo</div>
       </div>
@@ -252,7 +252,7 @@
     <div class="filter-wrap">
       <span class="filter-icon">🔍</span>
       <input id="filter-input" class="filter-input" type="text"
-             placeholder="Filtrar: 2025  ·  enero  ·  enero 2025 + febrero 2025"
+             placeholder="Filtrar: 2025  ·  enero  ·  Daniel  ·  Daniel 2025 + enero 2025"
              oninput="onFilterChange(this.value)">
       <button class="filter-clear" id="filter-clear" onclick="clearFilter()">×</button>
     </div>
@@ -632,12 +632,12 @@ function allEventsRaw() {
 
 function allEvents() {
   const raw = allEventsRaw();
-  return activeFilter ? raw.filter(e => matchesFilter(e.date)) : raw;
+  return activeFilter ? raw.filter(e => matchesFilter(e.date, e.member)) : raw;
 }
 
 function memberEntries(member) {
   const entries = appData.members[member] || [];
-  return activeFilter ? entries.filter(e => matchesFilter(e.date)) : entries;
+  return activeFilter ? entries.filter(e => matchesFilter(e.date, member)) : entries;
 }
 
 function memberTotal(member) {
@@ -687,19 +687,25 @@ function parseFilter(query) {
       term.split(/\s+/).filter(Boolean)
         .map(token => {
           const t = token.toLowerCase();
-          if (MONTH_NAMES[t] !== undefined) return { type: 'month', value: MONTH_NAMES[t], label: t };
-          if (/^\d{4}$/.test(t))            return { type: 'year',  value: parseInt(t),    label: t };
-          return null;
-        }).filter(Boolean)
+          if (MONTH_NAMES[t] !== undefined) return { type: 'month',  value: MONTH_NAMES[t], label: t };
+          if (/^\d{4}$/.test(t))            return { type: 'year',   value: parseInt(t),    label: t };
+          return                                    { type: 'member', value: t,              label: token };
+        })
     ).filter(t => t.length > 0);
   return parsed.length ? parsed : null;
 }
 
-function matchesFilter(dateStr) {
+function matchesFilter(dateStr, memberName) {
   if (!activeFilter) return true;
   const [y, m] = dateStr.split('-').map(Number);
+  const nameLow = (memberName || '').toLowerCase();
   return activeFilter.some(term =>
-    term.every(cond => cond.type === 'year' ? y === cond.value : m === cond.value)
+    term.every(cond => {
+      if (cond.type === 'year')   return y === cond.value;
+      if (cond.type === 'month')  return m === cond.value;
+      if (cond.type === 'member') return nameLow.includes(cond.value);
+      return false;
+    })
   );
 }
 
