@@ -1,6 +1,6 @@
 {
   "name": "gastrotracker",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Control gastrointestinal de grupo — parsea exports de WhatsApp y grafica estadísticas de 💩",
   "private": true,
   "scripts": {
@@ -13,7 +13,6 @@
   },
   "keywords": ["whatsapp", "gastro", "tracker", "cloudflare-workers", "github-gist"],
   "author": "Kike",
-  "license": "MIT",
   "devDependencies": {
     "wrangler": "^3.0.0"
   }

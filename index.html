@@ -132,41 +132,6 @@
     .mini-cell { padding: 8px 10px; }
     .mini-label { color: var(--muted); font-size: 0.75rem; margin-bottom: 2px; }
 
-    /* Modal */
-    .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.75);
-      z-index: 200;
-      display: flex; align-items: center; justify-content: center;
-      padding: 20px;
-    }
-    .modal-box { width: 100%; max-width: 480px; padding: 24px; }
-    .modal-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 20px;
-    }
-    .modal-close {
-      background: none; border: none; color: var(--muted);
-      font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
-    }
-    .modal-close:hover { color: var(--text); }
-    .field-label {
-      display: block; font-size: 0.82rem; color: var(--muted);
-      margin-bottom: 6px;
-    }
-    .field-input {
-      width: 100%; padding: 10px 12px;
-      background: var(--card2); border: 1px solid var(--border);
-      border-radius: 8px; color: var(--text); font-size: 0.9rem;
-      outline: none; transition: border-color 0.15s;
-    }
-    .field-input:focus { border-color: var(--accent); }
-    .hint {
-      background: var(--card2); border-radius: 8px; padding: 12px;
-      font-size: 0.8rem; color: var(--muted); line-height: 1.5;
-    }
-    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
-
     /* Toast */
     #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
     .toast {
@@ -230,10 +195,7 @@
         <div style="font-size:0.75rem;color:var(--muted);">Control gastrointestinal del grupo</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:14px;">
-      <span id="conn-status">⚪ Sin conectar</span>
-      <button class="btn btn-primary" onclick="openSettings()">⚙️ Configurar</button>
-    </div>
+    <span id="conn-status">⚪ Sin conectar</span>
   </div>
 </header>
 
@@ -331,33 +293,10 @@
   <!-- Empty state -->
   <div id="empty-state" style="text-align:center;padding:72px 20px;color:var(--muted);">
     <div style="font-size:4rem;margin-bottom:16px;">💩</div>
-    <div style="font-size:1.05rem;">Configura la URL del proxy y sube un chat de WhatsApp para empezar</div>
-    <div style="font-size:0.85rem;margin-top:8px;">Ver README para instrucciones de instalación</div>
+    <div style="font-size:1.05rem;">Sube una exportación de WhatsApp para empezar</div>
   </div>
 
 </main>
-
-<!-- ═══ SETTINGS MODAL ════════════════════════════════════════════════════ -->
-<div id="settings-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSettings()">
-  <div class="card modal-box">
-    <div class="modal-header">
-      <span style="font-size:1.1rem;font-weight:700;">⚙️ Configuración</span>
-      <button class="modal-close" onclick="closeSettings()">×</button>
-    </div>
-    <label class="field-label">URL del Proxy (Cloudflare Worker)</label>
-    <input id="proxy-input" class="field-input" type="url"
-           placeholder="https://gastro-proxy.TU-USUARIO.workers.dev">
-    <div class="hint" style="margin-top:12px;">
-      💡 El proxy almacena de forma segura el token de GitHub y el ID del Gist.
-      Sólo tú (y quien tenga esta URL) puede leer/escribir los datos.<br>
-      Consulta el <strong>README.md</strong> para los pasos de instalación.
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeSettings()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveSettings()">Guardar</button>
-    </div>
-  </div>
-</div>
 
 <!-- ═══ TOAST ══════════════════════════════════════════════════════════════ -->
 <div id="toast-container"></div>
@@ -368,7 +307,7 @@
 // CONSTANTS
 // ──────────────────────────────────────────────────────────────────────────
 const POOP = '💩';
-const LS_KEY = 'gastrotracker_v1';
+const PROXY = 'https://control-gastrointestinal.quiquelang.workers.dev/';
 const MONTHS_ES  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 const WEEKDAY_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
@@ -388,32 +327,9 @@ const CHART_PALETTE  = ['#c4691e','#e8891e','#a85216','#d4853d','#f09830','#7a40
 // ──────────────────────────────────────────────────────────────────────────
 // STATE
 // ──────────────────────────────────────────────────────────────────────────
-let cfg          = loadCfg();
-let appData      = { version: 1, members: {}, lastUpdated: null };
-let charts       = {};
-let pendingEvts  = null;
-
-// ──────────────────────────────────────────────────────────────────────────
-// CONFIG / SETTINGS
-// ──────────────────────────────────────────────────────────────────────────
-function loadCfg() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); }
-  catch { return {}; }
-}
-function saveCfg() { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); }
-
-function openSettings() {
-  document.getElementById('proxy-input').value = cfg.proxyUrl || '';
-  document.getElementById('settings-modal').style.display = 'flex';
-}
-function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
-function saveSettings() {
-  cfg.proxyUrl = document.getElementById('proxy-input').value.trim();
-  saveCfg();
-  closeSettings();
-  if (cfg.proxyUrl) loadData();
-  showToast('Configuración guardada', 'success');
-}
+let appData     = { version: 1, members: {}, lastUpdated: null };
+let charts      = {};
+let pendingEvts = null;
 
 // ──────────────────────────────────────────────────────────────────────────
 // PROXY / GIST API
@@ -425,10 +341,9 @@ function setConnStatus(s) {
 }
 
 async function loadData() {
-  if (!cfg.proxyUrl) { setConnStatus('off'); return; }
   setConnStatus('loading');
   try {
-    const r = await fetch(cfg.proxyUrl);
+    const r = await fetch(PROXY);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     appData = d && d.version ? d : { version:1, members:{}, lastUpdated:null };
@@ -441,9 +356,8 @@ async function loadData() {
 }
 
 async function saveData(data) {
-  if (!cfg.proxyUrl) { showToast('Configura la URL del proxy primero', 'error'); return false; }
   try {
-    const r = await fetch(cfg.proxyUrl, {
+    const r = await fetch(PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -938,8 +852,7 @@ function showToast(msg, type = 'info') {
 Chart.defaults.color       = '#a08060';
 Chart.defaults.borderColor = '#3a2810';
 
-if (cfg.proxyUrl) loadData();
-else setConnStatus('off');
+loadData();
 </script>
 </body>
 </html>
