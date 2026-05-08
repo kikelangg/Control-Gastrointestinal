@@ -6,9 +6,10 @@
  *   GIST_ID      ID of the target GitHub Gist
  *
  * API:
- *   GET  /   → returns full JSON data from Gist
- *   POST /   → body: { events: [{author, date, time, count}] }
- *              merges new events into existing data, never overwrites
+ *   GET  /        → returns full JSON data from Gist
+ *   GET  /?debug  → diagnostic info (file names, truncation status, content preview)
+ *   POST /        → body: { events: [{author, date, time, count}] }
+ *                   merges new events into existing data, never overwrites
  */
 
 const FILENAME   = 'gastro-data.json';
@@ -39,6 +40,10 @@ export default {
 
     // ── GET: read current data ──────────────────────────────────────────
     if (request.method === 'GET') {
+      const url = new URL(request.url);
+      if (url.searchParams.has('debug')) {
+        return debugInfo(GIST_ID, ghHeaders);
+      }
       const data = await readGist(GIST_ID, ghHeaders);
       if (data.error) return json({ error: data.error }, data.status || 500);
       return json(data);
@@ -94,14 +99,40 @@ async function readGist(gistId, headers) {
   const gist = await res.json();
   const file = gist.files?.[FILENAME];
   if (!file) return { ...EMPTY_DATA };
+
+  // GitHub truncates large files — fetch raw content when needed
+  let content = file.content;
+  if (!content || file.truncated) {
+    const rawRes = await fetch(file.raw_url, { headers: { 'User-Agent': 'GastroTracker/1.0' } });
+    if (!rawRes.ok) return { ...EMPTY_DATA };
+    content = await rawRes.text();
+  }
+
   try {
-    const parsed = JSON.parse(file.content);
+    const parsed = JSON.parse(content);
     return (parsed && typeof parsed === 'object' && parsed.members)
       ? { version: parsed.version || 1, members: parsed.members, lastUpdated: parsed.lastUpdated || null }
       : { ...EMPTY_DATA };
   } catch {
     return { ...EMPTY_DATA };
   }
+}
+
+async function debugInfo(gistId, headers) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
+  if (!res.ok) return json({ github_status: res.status, error: 'GitHub API request failed' });
+  const gist = await res.json();
+  const fileNames = Object.keys(gist.files || {});
+  const file = gist.files?.[FILENAME];
+  return json({
+    looking_for:          FILENAME,
+    files_in_gist:        fileNames,
+    file_found:           !!file,
+    file_truncated:       file?.truncated ?? null,
+    file_content_null:    file ? file.content === null : null,
+    file_content_length:  file?.content?.length ?? null,
+    file_content_preview: file?.content?.slice(0, 200) ?? null,
+  });
 }
 
 async function writeGist(gistId, headers, data) {
