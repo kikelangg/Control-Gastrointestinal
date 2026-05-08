@@ -592,16 +592,23 @@ async function confirmSave() {
   if (!pendingEvts) return;
 
   const result = await saveData(pendingEvts);
-  if (result) {
-    if (result.added === 0) {
-      showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
-    } else {
-      pendingEvts = null;
-      closeUpload();
-      showToast(`✅ ${result.added} nuevos eventos guardados`, 'success');
-      await loadData();
-    }
+  if (!result) return;
+
+  if (result.added === 0) {
+    showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
+    return;
   }
+
+  // Apply merge locally for instant feedback
+  const { data } = mergeEvents(appData, pendingEvts);
+  appData = data;
+  pendingEvts = null;
+  closeUpload();
+  renderAll();
+  showToast(`✅ ${result.added} nuevos eventos guardados`, 'success');
+
+  // Background sync to stay in sync with the Gist
+  loadData();
 }
 
 // ──────────────────────────────────────────────────────────────────────────
