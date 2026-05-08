@@ -4,9 +4,15 @@
  * Secrets required (set via `wrangler secret put`):
  *   GIST_TOKEN   GitHub Personal Access Token (scope: gist)
  *   GIST_ID      ID of the target GitHub Gist
+ *
+ * API:
+ *   GET  /   → returns full JSON data from Gist
+ *   POST /   → body: { events: [{author, date, time, count}] }
+ *              merges new events into existing data, never overwrites
  */
 
-const FILENAME = 'gastro-data.json';
+const FILENAME   = 'gastro-data.json';
+const EMPTY_DATA = { version: 1, members: {}, lastUpdated: null };
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -14,17 +20,13 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const EMPTY_DATA = { version: 1, members: {}, lastUpdated: null };
-
 export default {
   async fetch(request, env) {
-    // Pre-flight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS });
     }
 
     const { GIST_TOKEN, GIST_ID } = env;
-
     if (!GIST_TOKEN || !GIST_ID) {
       return json({ error: 'Secrets GIST_TOKEN and GIST_ID are not configured.' }, 500);
     }
@@ -37,62 +39,119 @@ export default {
 
     // ── GET: read current data ──────────────────────────────────────────
     if (request.method === 'GET') {
-      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-        headers: ghHeaders,
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        return json({ error: `GitHub API error: ${res.status} — ${body}` }, res.status);
-      }
-
-      const gist = await res.json();
-      const file = gist.files?.[FILENAME];
-
-      if (!file) {
-        // First run: Gist exists but file doesn't yet
-        return json(EMPTY_DATA);
-      }
-
-      // Parse and return
-      try {
-        const data = JSON.parse(file.content);
-        return json(data);
-      } catch {
-        return json(EMPTY_DATA);
-      }
+      const data = await readGist(GIST_ID, ghHeaders);
+      if (data.error) return json({ error: data.error }, data.status || 500);
+      return json(data);
     }
 
-    // ── POST: overwrite data ────────────────────────────────────────────
+    // ── POST: merge new events into existing data ───────────────────────
     if (request.method === 'POST') {
       let body;
-      try {
-        body = await request.json();
-      } catch {
-        return json({ error: 'Invalid JSON body' }, 400);
+      try { body = await request.json(); }
+      catch { return json({ error: 'Invalid JSON body' }, 400); }
+
+      const events = body?.events;
+      if (!Array.isArray(events) || events.length === 0) {
+        return json({ error: 'Body must contain a non-empty events array' }, 400);
       }
 
-      const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-        method:  'PATCH',
-        headers: { ...ghHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: {
-            [FILENAME]: { content: JSON.stringify(body, null, 2) },
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        const errBody = await res.text();
-        return json({ error: `GitHub API error: ${res.status} — ${errBody}` }, res.status);
+      // Validate each event has the minimum required fields
+      for (const ev of events) {
+        if (!ev.author || !ev.date || !ev.time) {
+          return json({ error: 'Each event must have author, date, and time' }, 400);
+        }
       }
 
-      return json({ success: true });
+      // Load current data from Gist
+      const current = await readGist(GIST_ID, ghHeaders);
+      if (current.error) return json({ error: current.error }, current.status || 500);
+
+      // Merge — existing data is never discarded
+      const { data: merged, added } = mergeEvents(current, events);
+
+      // Save only if there's something new
+      if (added === 0) {
+        return json({ success: true, added: 0 });
+      }
+
+      const saveErr = await writeGist(GIST_ID, ghHeaders, merged);
+      if (saveErr) return json({ error: saveErr }, 500);
+
+      return json({ success: true, added });
     }
 
     return new Response('Method Not Allowed', { status: 405, headers: CORS });
   },
 };
+
+// ── Gist helpers ─────────────────────────────────────────────────────────────
+
+async function readGist(gistId, headers) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, { headers });
+  if (!res.ok) {
+    return { error: `GitHub API error: ${res.status}`, status: res.status };
+  }
+  const gist = await res.json();
+  const file = gist.files?.[FILENAME];
+  if (!file) return { ...EMPTY_DATA };
+  try {
+    const parsed = JSON.parse(file.content);
+    return (parsed && typeof parsed === 'object' && parsed.members)
+      ? { version: parsed.version || 1, members: parsed.members, lastUpdated: parsed.lastUpdated || null }
+      : { ...EMPTY_DATA };
+  } catch {
+    return { ...EMPTY_DATA };
+  }
+}
+
+async function writeGist(gistId, headers, data) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method:  'PATCH',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: { [FILENAME]: { content: JSON.stringify(data, null, 2) } },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    return `GitHub API error: ${res.status} — ${body}`;
+  }
+  return null;
+}
+
+// ── Merge logic ───────────────────────────────────────────────────────────────
+// Incoming events: [{ author, date, time, count }]
+// Stored format:   { members: { "Name": [{ date, time, count }] } }
+
+function mergeEvents(existing, newEvents) {
+  const data = {
+    version:     existing.version || 1,
+    members:     JSON.parse(JSON.stringify(existing.members || {})),
+    lastUpdated: existing.lastUpdated,
+  };
+
+  const seen = new Set();
+  for (const [member, entries] of Object.entries(data.members)) {
+    for (const e of entries) seen.add(`${member}|${e.date}|${e.time}`);
+  }
+
+  let added = 0;
+  for (const ev of newEvents) {
+    const key = `${ev.author}|${ev.date}|${ev.time}`;
+    if (seen.has(key)) continue;
+    if (!data.members[ev.author]) data.members[ev.author] = [];
+    data.members[ev.author].push({ date: ev.date, time: ev.time, count: ev.count || 1 });
+    seen.add(key);
+    added++;
+  }
+
+  for (const entries of Object.values(data.members)) {
+    entries.sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+  }
+
+  data.lastUpdated = new Date().toISOString();
+  return { data, added };
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {

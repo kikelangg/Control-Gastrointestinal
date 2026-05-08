@@ -213,7 +213,7 @@
       <div>
         <div style="display:flex;align-items:baseline;gap:8px;">
           <div style="font-size:1.15rem;font-weight:700;">GastroTracker</div>
-          <span id="app-version" style="font-size:0.7rem;color:var(--muted);font-weight:500;">v1.0.0</span>
+          <span id="app-version" style="font-size:0.7rem;color:var(--muted);font-weight:500;">v0.2.1</span>
         </div>
         <div style="font-size:0.75rem;color:var(--muted);">Control gastrointestinal del grupo</div>
       </div>
@@ -392,7 +392,6 @@ async function loadData() {
     const r = await fetch(PROXY);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
-    console.log('[GastroTracker] datos cargados del Gist:', d);
     appData = (d && typeof d === 'object' && d.members)
       ? { version: d.version || 1, members: d.members, lastUpdated: d.lastUpdated || null }
       : { version: 1, members: {}, lastUpdated: null };
@@ -404,18 +403,18 @@ async function loadData() {
   }
 }
 
-async function saveData(data) {
+async function saveData(events) {
   try {
     const r = await fetch(PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ events }),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return true;
+    return await r.json();
   } catch(e) {
     showToast('Error al guardar: ' + e.message, 'error');
-    return false;
+    return null;
   }
 }
 
@@ -591,20 +590,17 @@ async function processFile(file) {
 
 async function confirmSave() {
   if (!pendingEvts) return;
-  const { data, added } = mergeEvents(appData, pendingEvts);
 
-  if (added === 0) {
-    showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
-    return;
-  }
-
-  const ok = await saveData(data);
-  if (ok) {
-    appData = data;
-    pendingEvts = null;
-    closeUpload();
-    renderAll();
-    showToast(`✅ ${added} nuevos eventos guardados`, 'success');
+  const result = await saveData(pendingEvts);
+  if (result) {
+    if (result.added === 0) {
+      showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
+    } else {
+      pendingEvts = null;
+      closeUpload();
+      showToast(`✅ ${result.added} nuevos eventos guardados`, 'success');
+      await loadData();
+    }
   }
 }
 
