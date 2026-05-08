@@ -1,0 +1,20 @@
+{
+  "name": "gastrotracker",
+  "version": "1.0.0",
+  "description": "Control gastrointestinal de grupo — parsea exports de WhatsApp y grafica estadísticas de 💩",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/inject-version.js",
+    "version": "npm run build && git add index.html",
+    "deploy:worker": "wrangler deploy",
+    "secret:token": "wrangler secret put GIST_TOKEN",
+    "secret:gist": "wrangler secret put GIST_ID",
+    "secrets": "npm run secret:token && npm run secret:gist"
+  },
+  "keywords": ["whatsapp", "gastro", "tracker", "cloudflare-workers", "github-gist"],
+  "author": "Kike",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

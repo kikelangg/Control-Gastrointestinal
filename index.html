@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💩 GastroTracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:      #1a1208;
+      --card:    #251a0a;
+      --card2:   #2e2010;
+      --border:  #4a3218;
+      --accent:  #c4691e;
+      --accent2: #e8891e;
+      --text:    #f0e8d0;
+      --muted:   #a08060;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    a { color: var(--accent2); }
+    input, button { font-family: inherit; }
+
+    /* Layout */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    header .inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    main { padding: 28px 20px; max-width: 1200px; margin: 0 auto; }
+
+    /* Cards */
+    .card  { background: var(--card);  border: 1px solid var(--border); border-radius: 12px; }
+    .card2 { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; border-radius: 8px; border: none;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-ghost {
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--card2); }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      background: var(--card);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: #2e1e08;
+    }
+
+    /* Stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    .stat-card { padding: 20px; }
+    .stat-label { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent2); line-height: 1.1; }
+    .stat-value.sm { font-size: 1.3rem; }
+
+    /* Charts grid */
+    .charts-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-card { padding: 20px; }
+    .chart-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 14px; }
+
+    /* Member cards */
+    .members-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .member-card { padding: 20px; }
+    .progress-bar {
+      background: var(--card2);
+      border-radius: 100px;
+      height: 5px;
+      overflow: hidden;
+      margin: 10px 0 14px;
+    }
+    .progress-fill {
+      background: var(--accent);
+      height: 100%;
+      border-radius: 100px;
+      transition: width 0.6s ease;
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+    .mini-cell { padding: 8px 10px; }
+    .mini-label { color: var(--muted); font-size: 0.75rem; margin-bottom: 2px; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-box { width: 100%; max-width: 480px; padding: 24px; }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 20px;
+    }
+    .modal-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.6rem; cursor: pointer; line-height: 1; padding: 0;
+    }
+    .modal-close:hover { color: var(--text); }
+    .field-label {
+      display: block; font-size: 0.82rem; color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .field-input {
+      width: 100%; padding: 10px 12px;
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.9rem;
+      outline: none; transition: border-color 0.15s;
+    }
+    .field-input:focus { border-color: var(--accent); }
+    .hint {
+      background: var(--card2); border-radius: 8px; padding: 12px;
+      font-size: 0.8rem; color: var(--muted); line-height: 1.5;
+    }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+    /* Toast */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      padding: 11px 18px; border-radius: 8px; font-size: 0.88rem; font-weight: 500;
+      animation: slideIn 0.25s ease; max-width: 320px;
+    }
+    .toast-success { background: #183d24; border: 1px solid #2e7a44; color: #a8f0c0; }
+    .toast-error   { background: #3d1818; border: 1px solid #7a2e2e; color: #f0a8a8; }
+    .toast-info    { background: #18293d; border: 1px solid #2e4e7a; color: #a8c8f0; }
+    @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateX(120%); } }
+
+    /* Parse result box */
+    #parse-result {
+      margin-top: 14px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: var(--card2);
+      border: 1px solid var(--border);
+      display: none;
+    }
+
+    /* Heatmap */
+    .heatmap-wrap { overflow-x: auto; padding-bottom: 4px; }
+    .heatmap-legend {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--muted);
+      justify-content: flex-end; margin-top: 8px;
+    }
+    .legend-cell { width: 12px; height: 12px; border-radius: 2px; }
+
+    /* Section headers */
+    .section-title { font-size: 1rem; font-weight: 700; margin-bottom: 14px; }
+
+    /* Status dot */
+    #conn-status { font-size: 0.8rem; color: var(--muted); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 600px) {
+      .charts-2 { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════════════════ -->
+<header>
+  <div class="inner">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:2rem;">💩</span>
+      <div>
+        <div style="display:flex;align-items:baseline;gap:8px;">
+          <div style="font-size:1.15rem;font-weight:700;">GastroTracker</div>
+          <span id="app-version" style="font-size:0.7rem;color:var(--muted);font-weight:500;">v1.0.0</span>
+        </div>
+        <div style="font-size:0.75rem;color:var(--muted);">Control gastrointestinal del grupo</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span id="conn-status">⚪ Sin conectar</span>
+      <button class="btn btn-primary" onclick="openSettings()">⚙️ Configurar</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ MAIN ══════════════════════════════════════════════════════════════ -->
+<main>
+
+  <!-- Upload -->
+  <section style="margin-bottom:28px;">
+    <div class="upload-zone" id="upload-zone"
+         onclick="fileInput.click()"
+         ondragover="onDragOver(event)"
+         ondrop="onDrop(event)"
+         ondragleave="onDragLeave(event)">
+      <div style="font-size:3rem;margin-bottom:12px;">📤</div>
+      <div style="font-size:1.1rem;font-weight:600;margin-bottom:6px;">Subir exportación de WhatsApp</div>
+      <div style="color:var(--muted);font-size:0.88rem;margin-bottom:18px;">
+        En WhatsApp: Chat → ⋮ → Más → Exportar chat → Sin multimedia → sube el .txt aquí
+      </div>
+      <button class="btn btn-primary" onclick="event.stopPropagation();fileInput.click()">Seleccionar archivo .txt</button>
+    </div>
+    <input type="file" id="fileInput" accept=".txt" style="display:none;" onchange="onFileSelect(event)">
+
+    <div id="parse-result"></div>
+  </section>
+
+  <!-- Stats -->
+  <section id="stats-section" style="display:none;margin-bottom:28px;">
+    <div class="stats-grid">
+      <div class="card stat-card">
+        <div class="stat-label">💩 Total del grupo</div>
+        <div class="stat-value" id="s-total">0</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">👑 Campeón del baño</div>
+        <div class="stat-value sm" id="s-champ">—</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">📊 Promedio diario</div>
+        <div class="stat-value" id="s-avg">0</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">📅 Período registrado</div>
+        <div class="stat-value sm" id="s-period">—</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-label">👥 Miembros</div>
+        <div class="stat-value" id="s-members">0</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <section id="charts-section" style="display:none;margin-bottom:28px;">
+    <div class="charts-2">
+      <div class="card chart-card">
+        <div class="chart-title">🏆 Ranking — quién más caga</div>
+        <canvas id="chart-rank"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">📈 Actividad semanal</div>
+        <canvas id="chart-timeline"></canvas>
+      </div>
+    </div>
+    <div class="charts-2">
+      <div class="card chart-card">
+        <div class="chart-title">🕐 Hora del día favorita</div>
+        <canvas id="chart-hours"></canvas>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-title">📆 Día de la semana</div>
+        <canvas id="chart-weekday"></canvas>
+      </div>
+    </div>
+    <div class="card chart-card" style="margin-bottom:0;">
+      <div class="chart-title">🗓️ Mapa de calor — último año</div>
+      <div class="heatmap-wrap" id="heatmap"></div>
+      <div class="heatmap-legend">
+        <span>Menos</span>
+        <div class="legend-cell" style="background:#2d1e0a;"></div>
+        <div class="legend-cell" style="background:#7a4010;"></div>
+        <div class="legend-cell" style="background:#a85216;"></div>
+        <div class="legend-cell" style="background:#c4691e;"></div>
+        <div class="legend-cell" style="background:#e8891e;"></div>
+        <span>Más</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Member cards -->
+  <section id="members-section" style="display:none;">
+    <div class="section-title">👥 Estadísticas por miembro</div>
+    <div class="members-grid" id="member-cards"></div>
+  </section>
+
+  <!-- Empty state -->
+  <div id="empty-state" style="text-align:center;padding:72px 20px;color:var(--muted);">
+    <div style="font-size:4rem;margin-bottom:16px;">💩</div>
+    <div style="font-size:1.05rem;">Configura la URL del proxy y sube un chat de WhatsApp para empezar</div>
+    <div style="font-size:0.85rem;margin-top:8px;">Ver README para instrucciones de instalación</div>
+  </div>
+
+</main>
+
+<!-- ═══ SETTINGS MODAL ════════════════════════════════════════════════════ -->
+<div id="settings-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSettings()">
+  <div class="card modal-box">
+    <div class="modal-header">
+      <span style="font-size:1.1rem;font-weight:700;">⚙️ Configuración</span>
+      <button class="modal-close" onclick="closeSettings()">×</button>
+    </div>
+    <label class="field-label">URL del Proxy (Cloudflare Worker)</label>
+    <input id="proxy-input" class="field-input" type="url"
+           placeholder="https://gastro-proxy.TU-USUARIO.workers.dev">
+    <div class="hint" style="margin-top:12px;">
+      💡 El proxy almacena de forma segura el token de GitHub y el ID del Gist.
+      Sólo tú (y quien tenga esta URL) puede leer/escribir los datos.<br>
+      Consulta el <strong>README.md</strong> para los pasos de instalación.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeSettings()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TOAST ══════════════════════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ═══ SCRIPTS ═══════════════════════════════════════════════════════════ -->
+<script>
+// ──────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ──────────────────────────────────────────────────────────────────────────
+const POOP = '💩';
+const LS_KEY = 'gastrotracker_v1';
+const MONTHS_ES  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const WEEKDAY_ES = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+// WhatsApp line patterns (multiple export formats)
+const WA_PATTERNS = [
+  // [DD/MM/YY, HH:MM:SS] or [DD/MM/YYYY, HH:MM] Author: msg  (iOS/some Android)
+  /^\[(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?)\]\s+(.+?):\s*([\s\S]*)$/,
+  // DD/MM/YY, HH:MM - Author: msg  (Android)
+  /^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}),\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?)\s+-\s+(.+?):\s*([\s\S]*)$/,
+  // DD/MM/YY HH:MM - Author: msg  (sin coma)
+  /^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?)\s+-\s+(.+?):\s*([\s\S]*)$/,
+];
+
+const HEATMAP_COLORS = ['#2d1e0a','#7a4010','#a85216','#c4691e','#e8891e'];
+const CHART_PALETTE  = ['#c4691e','#e8891e','#a85216','#d4853d','#f09830','#7a4010','#e0a060','#b86020','#d07030','#906030'];
+
+// ──────────────────────────────────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────────────────────────────────
+let cfg          = loadCfg();
+let appData      = { version: 1, members: {}, lastUpdated: null };
+let charts       = {};
+let pendingEvts  = null;
+
+// ──────────────────────────────────────────────────────────────────────────
+// CONFIG / SETTINGS
+// ──────────────────────────────────────────────────────────────────────────
+function loadCfg() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveCfg() { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); }
+
+function openSettings() {
+  document.getElementById('proxy-input').value = cfg.proxyUrl || '';
+  document.getElementById('settings-modal').style.display = 'flex';
+}
+function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+function saveSettings() {
+  cfg.proxyUrl = document.getElementById('proxy-input').value.trim();
+  saveCfg();
+  closeSettings();
+  if (cfg.proxyUrl) loadData();
+  showToast('Configuración guardada', 'success');
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// PROXY / GIST API
+// ──────────────────────────────────────────────────────────────────────────
+function setConnStatus(s) {
+  const el = document.getElementById('conn-status');
+  const map = { off:'⚪ Sin conectar', loading:'🟡 Cargando…', ok:'🟢 Conectado', err:'🔴 Error' };
+  el.textContent = map[s] || s;
+}
+
+async function loadData() {
+  if (!cfg.proxyUrl) { setConnStatus('off'); return; }
+  setConnStatus('loading');
+  try {
+    const r = await fetch(cfg.proxyUrl);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    appData = d && d.version ? d : { version:1, members:{}, lastUpdated:null };
+    setConnStatus('ok');
+    renderAll();
+  } catch(e) {
+    setConnStatus('err');
+    showToast('Error al cargar datos: ' + e.message, 'error');
+  }
+}
+
+async function saveData(data) {
+  if (!cfg.proxyUrl) { showToast('Configura la URL del proxy primero', 'error'); return false; }
+  try {
+    const r = await fetch(cfg.proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return true;
+  } catch(e) {
+    showToast('Error al guardar: ' + e.message, 'error');
+    return false;
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// WHATSAPP PARSER
+// ──────────────────────────────────────────────────────────────────────────
+function parseWAExport(raw) {
+  // Normalise
+  raw = raw.replace(/^﻿/, '').replace(/‎|‏/g, '');
+  const lines = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  const msgs = [];
+  let cur = null;
+
+  for (const line of lines) {
+    let hit = false;
+    for (const pat of WA_PATTERNS) {
+      const m = line.match(pat);
+      if (m) {
+        if (cur) msgs.push(cur);
+        cur = { dateRaw: m[1], timeRaw: m[2], author: m[3].trim(), text: m[4] };
+        hit = true;
+        break;
+      }
+    }
+    if (!hit && cur) cur.text += '\n' + line;
+  }
+  if (cur) msgs.push(cur);
+  return msgs;
+}
+
+function normaliseDate(raw) {
+  const parts = raw.replace(/[-\.]/g, '/').split('/');
+  if (parts.length !== 3) return null;
+  let [a, b, c] = parts.map(Number);
+  if (c < 100) c += 2000;
+  let day, month, year;
+  // MM/DD/YY default; auto-detect when a > 12 (must be day) or b > 12 (must be day)
+  if (a > 12)      { day = a; month = b; year = c; }
+  else if (b > 12) { month = a; day = b; year = c; }
+  else             { month = a; day = b; year = c; }
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function normaliseTime(raw) {
+  let t = raw.trim();
+  let pm = false, am = false;
+  if (/[Pp][Mm]$/.test(t)) { pm = true; t = t.slice(0,-2).trim(); }
+  else if (/[Aa][Mm]$/.test(t)) { am = true; t = t.slice(0,-2).trim(); }
+  const [h, m] = t.split(':').map(Number);
+  let hour = h;
+  if (pm && hour < 12) hour += 12;
+  if (am && hour === 12) hour = 0;
+  return `${String(hour).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+function countPoop(text) { return text.split(POOP).length - 1; }
+
+function extractEvents(msgs) {
+  const events = [];
+  for (const msg of msgs) {
+    const n = countPoop(msg.text);
+    if (n === 0) continue;
+    const date = normaliseDate(msg.dateRaw);
+    if (!date) continue;
+    const time = normaliseTime(msg.timeRaw);
+    events.push({ author: msg.author, date, time, count: n,
+                  key: `${msg.author}|${date}|${time}` });
+  }
+  return events;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// DATA MERGING
+// ──────────────────────────────────────────────────────────────────────────
+function mergeEvents(existing, newEvts) {
+  const data = JSON.parse(JSON.stringify(existing));
+  if (!data.members) data.members = {};
+
+  const seen = new Set();
+  for (const [member, entries] of Object.entries(data.members)) {
+    for (const e of entries) seen.add(`${member}|${e.date}|${e.time}`);
+  }
+
+  let added = 0;
+  for (const ev of newEvts) {
+    if (seen.has(ev.key)) continue;
+    if (!data.members[ev.author]) data.members[ev.author] = [];
+    data.members[ev.author].push({ date: ev.date, time: ev.time, count: ev.count });
+    seen.add(ev.key);
+    added++;
+  }
+
+  for (const entries of Object.values(data.members)) {
+    entries.sort((a,b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+  }
+
+  data.lastUpdated = new Date().toISOString();
+  return { data, added };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// FILE UPLOAD HANDLING
+// ──────────────────────────────────────────────────────────────────────────
+const fileInput = document.getElementById('fileInput');
+
+function onDragOver(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+function onDragLeave()  { document.getElementById('upload-zone').classList.remove('drag-over'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+}
+function onFileSelect(e) {
+  const f = e.target.files[0];
+  if (f) processFile(f);
+  e.target.value = '';
+}
+
+async function processFile(file) {
+  if (!file.name.endsWith('.txt')) { showToast('Solo se aceptan archivos .txt', 'error'); return; }
+
+  showToast('Procesando archivo…', 'info');
+  const raw  = await file.text();
+  const msgs = parseWAExport(raw);
+  const evts = extractEvents(msgs);
+  const box  = document.getElementById('parse-result');
+
+  if (evts.length === 0) {
+    box.style.display = 'block';
+    box.innerHTML = `<span style="color:var(--muted);">⚠️ No se encontraron eventos de 💩 en este archivo.<br>
+      Asegúrate de que sea una exportación de WhatsApp que contenga el emoji de caca.</span>`;
+    showToast('No se encontraron eventos 💩', 'error');
+    return;
+  }
+
+  const authors   = [...new Set(evts.map(e => e.author))];
+  const totalCnt  = evts.reduce((s,e) => s + e.count, 0);
+  pendingEvts     = evts;
+
+  box.style.display = 'block';
+  box.innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;">✅ Archivo procesado correctamente</div>
+    <div style="font-size:0.88rem;color:var(--muted);margin-bottom:14px;">
+      📊 <strong style="color:var(--text);">${msgs.length.toLocaleString()}</strong> mensajes analizados &nbsp;·&nbsp;
+      💩 <strong style="color:var(--accent2);">${totalCnt}</strong> eventos detectados &nbsp;·&nbsp;
+      👥 <strong style="color:var(--text);">${authors.length}</strong> miembros: ${escHtml(authors.join(', '))}
+    </div>
+    <button class="btn btn-primary" onclick="confirmSave()">
+      💾 Guardar ${totalCnt} evento${totalCnt !== 1 ? 's' : ''} en el Gist
+    </button>
+  `;
+}
+
+async function confirmSave() {
+  if (!pendingEvts) return;
+  const { data, added } = mergeEvents(appData, pendingEvts);
+
+  if (added === 0) {
+    showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
+    return;
+  }
+
+  const ok = await saveData(data);
+  if (ok) {
+    appData = data;
+    pendingEvts = null;
+    document.getElementById('parse-result').style.display = 'none';
+    renderAll();
+    showToast(`✅ ${added} nuevos eventos guardados`, 'success');
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// DATA AGGREGATION HELPERS
+// ──────────────────────────────────────────────────────────────────────────
+function allEvents() {
+  const out = [];
+  for (const [member, entries] of Object.entries(appData.members || {})) {
+    for (const e of entries) {
+      const n = e.count || 1;
+      for (let i = 0; i < n; i++) out.push({ member, date: e.date, time: e.time });
+    }
+  }
+  return out.sort((a,b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+}
+
+function memberTotal(member) {
+  return (appData.members[member] || []).reduce((s,e) => s + (e.count||1), 0);
+}
+
+function memberStats(member) {
+  const entries = appData.members[member] || [];
+  const total   = entries.reduce((s,e) => s + (e.count||1), 0);
+  if (!total) return null;
+
+  const dates  = entries.map(e => e.date).sort();
+  const dayCnt = {};
+  const hrCnt  = {};
+  for (const e of entries) {
+    dayCnt[e.date] = (dayCnt[e.date] || 0) + (e.count||1);
+    const h = parseInt(e.time.split(':')[0]);
+    hrCnt[h] = (hrCnt[h] || 0) + (e.count||1);
+  }
+
+  const daysActive = Object.keys(dayCnt).length;
+  const topDay = Object.entries(dayCnt).sort((a,b) => b[1]-a[1])[0];
+  const topHr  = Object.entries(hrCnt).sort((a,b) => b[1]-a[1])[0];
+
+  return {
+    total,
+    firstDate:      dates[0],
+    lastDate:       dates[dates.length - 1],
+    daysActive,
+    avgPerActiveDay: (total / daysActive).toFixed(1),
+    topDay:         topDay ? topDay[0] : null,
+    topDayCount:    topDay ? topDay[1] : 0,
+    topHour:        topHr  ? parseInt(topHr[0]) : null,
+    latest:         entries[entries.length - 1],
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// STATS OVERVIEW
+// ──────────────────────────────────────────────────────────────────────────
+function renderStats() {
+  const evts    = allEvents();
+  const members = Object.keys(appData.members || {});
+  if (!evts.length) return;
+
+  document.getElementById('s-total').textContent   = evts.length.toLocaleString();
+  document.getElementById('s-members').textContent = members.length;
+
+  const sorted  = [...members].sort((a,b) => memberTotal(b) - memberTotal(a));
+  const champ   = sorted[0];
+  document.getElementById('s-champ').textContent   = champ ? champ.split(' ')[0] : '—';
+
+  const dates   = evts.map(e => e.date).sort();
+  const first   = new Date(dates[0] + 'T12:00');
+  const last    = new Date(dates[dates.length-1] + 'T12:00');
+  const daySpan = Math.max(1, (last - first) / 86400000 + 1);
+  document.getElementById('s-avg').textContent = (evts.length / daySpan).toFixed(1);
+
+  const months  = (last.getFullYear() - first.getFullYear()) * 12 + last.getMonth() - first.getMonth();
+  document.getElementById('s-period').textContent =
+    months < 1 ? `${Math.ceil(daySpan)} días` : `${months + 1} meses`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// CHARTS
+// ──────────────────────────────────────────────────────────────────────────
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function mkChart(id, type, labels, datasets, options = {}) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } },
+        y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } },
+      },
+      ...options,
+    },
+  });
+}
+
+function renderRankChart() {
+  const members = Object.keys(appData.members || {});
+  const data    = members.map(m => ({ name: m, v: memberTotal(m) })).sort((a,b) => b.v - a.v);
+  mkChart('chart-rank', 'bar',
+    data.map(d => d.name),
+    [{ data: data.map(d => d.v), backgroundColor: data.map((_,i) => CHART_PALETTE[i % CHART_PALETTE.length]), borderRadius: 5 }],
+    { indexAxis: 'y', scales: { x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } }, y: { grid: { display: false }, ticks: { color: '#f0e8d0' } } } }
+  );
+}
+
+function renderTimelineChart() {
+  const evts = allEvents();
+  if (!evts.length) return;
+
+  const weekly = {};
+  for (const e of evts) {
+    const d   = new Date(e.date + 'T12:00');
+    const dow = d.getDay();
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    const key = mon.toISOString().split('T')[0];
+    weekly[key] = (weekly[key] || 0) + 1;
+  }
+
+  const sorted = Object.entries(weekly).sort((a,b) => a[0].localeCompare(b[0]));
+  mkChart('chart-timeline', 'line',
+    sorted.map(([k]) => { const d = new Date(k+'T12:00'); return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`; }),
+    [{ data: sorted.map(([,v]) => v), borderColor: '#c4691e', backgroundColor: 'rgba(196,105,30,0.15)', fill: true, tension: 0.35, pointRadius: 2 }],
+    { scales: { x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060', maxTicksLimit: 8 } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
+  );
+}
+
+function renderHoursChart() {
+  const evts  = allEvents();
+  const hours = new Array(24).fill(0);
+  for (const e of evts) hours[parseInt(e.time.split(':')[0])]++;
+  const maxH  = Math.max(...hours, 1);
+  mkChart('chart-hours', 'bar',
+    Array.from({length:24}, (_,i) => `${String(i).padStart(2,'0')}h`),
+    [{ data: hours, backgroundColor: hours.map(v => `rgba(196,105,30,${0.2 + (v/maxH)*0.8})`), borderRadius: 3 }],
+    { scales: { x: { grid: { display: false }, ticks: { color: '#a08060', maxRotation: 0, font: { size: 10 } } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
+  );
+}
+
+function renderWeekdayChart() {
+  const evts = allEvents();
+  const days = new Array(7).fill(0);
+  for (const e of evts) days[new Date(e.date+'T12:00').getDay()]++;
+  // Reorder: Mon–Sun
+  const ord   = [days[1],days[2],days[3],days[4],days[5],days[6],days[0]];
+  const maxD  = Math.max(...ord, 1);
+  mkChart('chart-weekday', 'bar',
+    ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'],
+    [{ data: ord, backgroundColor: ord.map(v => `rgba(196,105,30,${0.2 + (v/maxD)*0.8})`), borderRadius: 4 }],
+    { scales: { x: { grid: { display: false }, ticks: { color: '#a08060' } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
+  );
+}
+
+function renderHeatmap() {
+  const wrap  = document.getElementById('heatmap');
+  const evts  = allEvents();
+  const dayCt = {};
+  for (const e of evts) dayCt[e.date] = (dayCt[e.date] || 0) + 1;
+  const maxV  = Math.max(...Object.values(dayCt), 1);
+
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - 364);
+  // Align to Monday
+  while (start.getDay() !== 1) start.setDate(start.getDate() - 1);
+
+  // Build weeks array
+  const weeks = [];
+  const cur   = new Date(start);
+  while (cur <= today) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const ds = cur.toISOString().split('T')[0];
+      week.push({ ds, count: dayCt[ds] || 0, future: cur > today, month: cur.getMonth() });
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(week);
+  }
+
+  // Build HTML
+  let html = '<div style="display:inline-flex;gap:1px;align-items:flex-start;">';
+
+  // Day labels column
+  html += '<div style="display:flex;flex-direction:column;gap:1px;margin-right:3px;padding-top:18px;">';
+  for (const lbl of ['L','','M','','J','','S']) {
+    html += `<div style="width:12px;height:12px;font-size:9px;color:var(--muted);display:flex;align-items:center;justify-content:flex-end;">${lbl}</div>`;
+  }
+  html += '</div>';
+
+  // Week columns
+  let prevMonth = -1;
+  for (const week of weeks) {
+    const monthLbl = week[0].month !== prevMonth ? MONTHS_ES[week[0].month] : '';
+    if (week[0].month !== prevMonth) prevMonth = week[0].month;
+
+    html += `<div style="display:flex;flex-direction:column;gap:1px;">`;
+    html += `<div style="height:16px;font-size:9px;color:var(--muted);white-space:nowrap;">${monthLbl}</div>`;
+    for (const day of week) {
+      let bg = HEATMAP_COLORS[0];
+      if (!day.future && day.count > 0) {
+        const r = day.count / maxV;
+        bg = r < 0.25 ? HEATMAP_COLORS[1] : r < 0.5 ? HEATMAP_COLORS[2] : r < 0.75 ? HEATMAP_COLORS[3] : HEATMAP_COLORS[4];
+      }
+      const tip = day.count > 0 ? `${day.ds} — ${day.count} 💩` : day.ds;
+      html += `<div title="${tip}" style="width:12px;height:12px;border-radius:2px;background:${bg};cursor:default;"></div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// MEMBER CARDS
+// ──────────────────────────────────────────────────────────────────────────
+function renderMemberCards() {
+  const members = Object.keys(appData.members || {});
+  const sorted  = [...members].sort((a,b) => memberTotal(b) - memberTotal(a));
+  const maxTot  = Math.max(...sorted.map(memberTotal), 1);
+  const medals  = ['🥇','🥈','🥉'];
+
+  document.getElementById('member-cards').innerHTML = sorted.map((m, idx) => {
+    const st = memberStats(m);
+    if (!st) return '';
+    const pct     = (st.total / maxTot * 100).toFixed(0);
+    const rank    = medals[idx] || `#${idx+1}`;
+    const topHour = st.topHour !== null ? `${String(st.topHour).padStart(2,'0')}:00` : '—';
+    return `
+      <div class="card member-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.4rem;">${rank}</span>
+            <div>
+              <div style="font-weight:700;">${escHtml(m)}</div>
+              <div style="font-size:0.75rem;color:var(--muted);">desde ${fmtDate(st.firstDate)}</div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:1.9rem;font-weight:700;color:var(--accent2);line-height:1;">${st.total}</div>
+            <div style="font-size:0.72rem;color:var(--muted);">💩 totales</div>
+          </div>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;"></div></div>
+        <div class="mini-grid">
+          <div class="card2 mini-cell"><div class="mini-label">📅 Días activos</div><strong>${st.daysActive}</strong></div>
+          <div class="card2 mini-cell"><div class="mini-label">📊 Avg / día</div><strong>${st.avgPerActiveDay}</strong></div>
+          <div class="card2 mini-cell"><div class="mini-label">🕐 Hora favorita</div><strong>${topHour}</strong></div>
+          <div class="card2 mini-cell"><div class="mini-label">🏆 Récord en un día</div><strong>${st.topDayCount} el ${fmtDate(st.topDay)}</strong></div>
+        </div>
+        ${st.latest ? `<div style="margin-top:10px;font-size:0.78rem;color:var(--muted);">Último: ${fmtDate(st.latest.date)} a las ${st.latest.time}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// RENDER ALL
+// ──────────────────────────────────────────────────────────────────────────
+function renderAll() {
+  const has = Object.keys(appData.members || {}).length > 0 &&
+              allEvents().length > 0;
+
+  document.getElementById('stats-section').style.display   = has ? 'block' : 'none';
+  document.getElementById('charts-section').style.display  = has ? 'block' : 'none';
+  document.getElementById('members-section').style.display = has ? 'block' : 'none';
+  document.getElementById('empty-state').style.display     = has ? 'none'  : 'block';
+
+  if (!has) return;
+  renderStats();
+  renderRankChart();
+  renderTimelineChart();
+  renderHoursChart();
+  renderWeekdayChart();
+  renderHeatmap();
+  renderMemberCards();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ──────────────────────────────────────────────────────────────────────────
+function fmtDate(s) {
+  if (!s) return '—';
+  const [y,m,d] = s.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'fadeOut 0.3s ease forwards';
+    setTimeout(() => el.remove(), 300);
+  }, 3200);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// INIT
+// ──────────────────────────────────────────────────────────────────────────
+Chart.defaults.color       = '#a08060';
+Chart.defaults.borderColor = '#3a2810';
+
+if (cfg.proxyUrl) loadData();
+else setConnStatus('off');
+</script>
+</body>
+</html>

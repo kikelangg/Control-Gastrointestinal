@@ -1,0 +1,7 @@
+name            = "gastro-proxy"
+main            = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Secrets are NOT stored here — set them with:
+#   wrangler secret put GIST_TOKEN
+#   wrangler secret put GIST_ID
