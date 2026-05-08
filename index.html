@@ -223,6 +223,16 @@
       .stats-grid { grid-template-columns: 1fr 1fr; }
     }
 
+    /* Granularity toggle */
+    .g-toggle { display: flex; gap: 2px; }
+    .g-btn {
+      padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-size: 0.75rem;
+      cursor: pointer; font-family: inherit; font-weight: 600; transition: all 0.15s;
+    }
+    .g-btn:hover { color: var(--text); border-color: var(--muted); }
+    .g-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
     /* Small button variant */
     .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
 
@@ -379,7 +389,14 @@
         <canvas id="chart-rank"></canvas>
       </div>
       <div class="card chart-card">
-        <div class="chart-title">📈 Actividad semanal</div>
+        <div class="chart-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <span>📈 Actividad</span>
+          <div class="g-toggle" id="g-timeline">
+            <button class="g-btn active" data-g="week"  onclick="setTimelineG('week')">Semana</button>
+            <button class="g-btn"        data-g="month" onclick="setTimelineG('month')">Mes</button>
+            <button class="g-btn"        data-g="year"  onclick="setTimelineG('year')">Año</button>
+          </div>
+        </div>
         <canvas id="chart-timeline"></canvas>
       </div>
     </div>
@@ -394,7 +411,14 @@
       </div>
     </div>
     <div class="card chart-card">
-      <div class="chart-title">👥 Actividad semanal por miembro</div>
+      <div class="chart-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <span>👥 Actividad por miembro</span>
+        <div class="g-toggle" id="g-member-timeline">
+          <button class="g-btn active" data-g="week"  onclick="setMemberTimelineG('week')">Semana</button>
+          <button class="g-btn"        data-g="month" onclick="setMemberTimelineG('month')">Mes</button>
+          <button class="g-btn"        data-g="year"  onclick="setMemberTimelineG('year')">Año</button>
+        </div>
+      </div>
       <canvas id="chart-members-timeline"></canvas>
     </div>
     <div class="card chart-card" style="margin-bottom:0;">
@@ -1174,6 +1198,45 @@ function renderStats() {
 // ──────────────────────────────────────────────────────────────────────────
 // CHARTS
 // ──────────────────────────────────────────────────────────────────────────
+let timelineG       = 'week';
+let memberTimelineG = 'week';
+
+function bucketKey(date, g) {
+  if (g === 'year')  return date.slice(0, 4);
+  if (g === 'month') return date.slice(0, 7);
+  // week: align to Monday
+  const d = new Date(date + 'T12:00');
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
+  return mon.toISOString().split('T')[0];
+}
+
+function bucketLabel(key, g) {
+  if (g === 'year') return key;
+  if (g === 'month') {
+    const [y, m] = key.split('-');
+    return `${MONTHS_ES[parseInt(m) - 1]} ${y}`;
+  }
+  const d = new Date(key + 'T12:00');
+  return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`;
+}
+
+function setTimelineG(g) {
+  timelineG = g;
+  document.querySelectorAll('#g-timeline .g-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.g === g)
+  );
+  renderTimelineChart();
+}
+
+function setMemberTimelineG(g) {
+  memberTimelineG = g;
+  document.querySelectorAll('#g-member-timeline .g-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.g === g)
+  );
+  renderMemberTimelineChart();
+}
+
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
 function mkChart(id, type, labels, datasets, options = {}) {
@@ -1208,21 +1271,17 @@ function renderTimelineChart() {
   const evts = allEvents();
   if (!evts.length) return;
 
-  const weekly = {};
+  const buckets = {};
   for (const e of evts) {
-    const d   = new Date(e.date + 'T12:00');
-    const dow = d.getDay();
-    const mon = new Date(d);
-    mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
-    const key = mon.toISOString().split('T')[0];
-    weekly[key] = (weekly[key] || 0) + 1;
+    const k = bucketKey(e.date, timelineG);
+    buckets[k] = (buckets[k] || 0) + 1;
   }
 
-  const sorted = Object.entries(weekly).sort((a,b) => a[0].localeCompare(b[0]));
+  const sorted = Object.entries(buckets).sort((a,b) => a[0].localeCompare(b[0]));
   mkChart('chart-timeline', 'line',
-    sorted.map(([k]) => { const d = new Date(k+'T12:00'); return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`; }),
+    sorted.map(([k]) => bucketLabel(k, timelineG)),
     [{ data: sorted.map(([,v]) => v), borderColor: '#c4691e', backgroundColor: 'rgba(196,105,30,0.15)', fill: true, tension: 0.35, pointRadius: 2 }],
-    { scales: { x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060', maxTicksLimit: 8 } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
+    { scales: { x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060', maxTicksLimit: 10 } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
   );
 }
 
@@ -1235,31 +1294,23 @@ function renderMemberTimelineChart() {
   const members = visibleMembers();
   if (!members.length) return;
 
-  const weekKey = date => {
-    const d   = new Date(date + 'T12:00');
-    const dow = d.getDay();
-    const mon = new Date(d);
-    mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
-    return mon.toISOString().split('T')[0];
-  };
-
-  const allWeeks = new Set();
-  const memberWeekly = {};
+  const allKeys = new Set();
+  const memberBuckets = {};
   for (const member of members) {
-    memberWeekly[member] = {};
-    for (const e of (appData.members[member] || [])) {
-      const k = weekKey(e.date);
-      allWeeks.add(k);
-      memberWeekly[member][k] = (memberWeekly[member][k] || 0) + (e.count || 1);
+    memberBuckets[member] = {};
+    for (const e of memberEntries(member)) {
+      const k = bucketKey(e.date, memberTimelineG);
+      allKeys.add(k);
+      memberBuckets[member][k] = (memberBuckets[member][k] || 0) + (e.count || 1);
     }
   }
 
-  const labels = [...allWeeks].sort();
+  const labels = [...allKeys].sort();
   const datasets = members.map((member, i) => {
     const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
     return {
       label: displayName(member),
-      data: labels.map(k => memberWeekly[member][k] || 0),
+      data: labels.map(k => memberBuckets[member][k] || 0),
       borderColor: color,
       backgroundColor: color + '22',
       fill: false,
@@ -1270,7 +1321,7 @@ function renderMemberTimelineChart() {
   });
 
   mkChart('chart-members-timeline', 'line',
-    labels.map(k => { const d = new Date(k+'T12:00'); return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`; }),
+    labels.map(k => bucketLabel(k, memberTimelineG)),
     datasets,
     {
       scales: {
