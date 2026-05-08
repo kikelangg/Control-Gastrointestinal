@@ -174,6 +174,29 @@
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+    /* Filter bar */
+    .filter-wrap { position: relative; }
+    .filter-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; font-size: 1rem; }
+    .filter-input {
+      width: 100%; padding: 12px 40px 12px 42px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--text); font-size: 0.9rem;
+      outline: none; transition: border-color 0.15s;
+    }
+    .filter-input:focus { border-color: var(--accent); }
+    .filter-input::placeholder { color: var(--muted); }
+    .filter-clear {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); font-size: 1.3rem;
+      cursor: pointer; padding: 0 4px; line-height: 1; display: none;
+    }
+    .filter-clear:hover { color: var(--text); }
+    .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; min-height: 24px; }
+    .chip { background: var(--accent); color: #fff; border-radius: 100px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; }
+    .chip-or { color: var(--muted); font-size: 0.78rem; font-weight: 700; }
+    .filter-count { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
+    .no-results { text-align: center; padding: 48px 20px; color: var(--muted); }
+
     @media (max-width: 600px) {
       .charts-2 { grid-template-columns: 1fr; }
       .stats-grid { grid-template-columns: 1fr 1fr; }
@@ -195,7 +218,10 @@
         <div style="font-size:0.75rem;color:var(--muted);">Control gastrointestinal del grupo</div>
       </div>
     </div>
-    <span id="conn-status">⚪ Sin conectar</span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="conn-status">⚪ Sin conectar</span>
+      <button class="btn btn-primary" id="upload-toggle-btn" onclick="toggleUpload()">📤 Subir chat</button>
+    </div>
   </div>
 </header>
 
@@ -203,7 +229,7 @@
 <main>
 
   <!-- Upload -->
-  <section style="margin-bottom:28px;">
+  <section id="upload-section" style="display:none;margin-bottom:28px;">
     <div class="upload-zone" id="upload-zone"
          onclick="fileInput.click()"
          ondragover="onDragOver(event)"
@@ -219,6 +245,18 @@
     <input type="file" id="fileInput" accept=".txt" style="display:none;" onchange="onFileSelect(event)">
 
     <div id="parse-result"></div>
+  </section>
+
+  <!-- Filter bar -->
+  <section id="filter-bar" style="display:none;margin-bottom:28px;">
+    <div class="filter-wrap">
+      <span class="filter-icon">🔍</span>
+      <input id="filter-input" class="filter-input" type="text"
+             placeholder="Filtrar: 2025  ·  enero  ·  enero 2025 + febrero 2025"
+             oninput="onFilterChange(this.value)">
+      <button class="filter-clear" id="filter-clear" onclick="clearFilter()">×</button>
+    </div>
+    <div class="filter-chips" id="filter-chips"></div>
   </section>
 
   <!-- Stats -->
@@ -324,12 +362,20 @@ const WA_PATTERNS = [
 const HEATMAP_COLORS = ['#2d1e0a','#7a4010','#a85216','#c4691e','#e8891e'];
 const CHART_PALETTE  = ['#c4691e','#e8891e','#a85216','#d4853d','#f09830','#7a4010','#e0a060','#b86020','#d07030','#906030'];
 
+const MONTH_NAMES = {
+  'enero':1,'febrero':2,'marzo':3,'abril':4,'mayo':5,'junio':6,
+  'julio':7,'agosto':8,'septiembre':9,'setiembre':9,'octubre':10,'noviembre':11,'diciembre':12,
+  'ene':1,'feb':2,'mar':3,'abr':4,'may':5,'jun':6,
+  'jul':7,'ago':8,'sep':9,'oct':10,'nov':11,'dic':12,
+};
+
 // ──────────────────────────────────────────────────────────────────────────
 // STATE
 // ──────────────────────────────────────────────────────────────────────────
-let appData     = { version: 1, members: {}, lastUpdated: null };
-let charts      = {};
-let pendingEvts = null;
+let appData      = { version: 1, members: {}, lastUpdated: null };
+let charts       = {};
+let pendingEvts  = null;
+let activeFilter = null; // null | Array<Array<{type,value,label}>>
 
 // ──────────────────────────────────────────────────────────────────────────
 // PROXY / GIST API
@@ -470,6 +516,23 @@ function mergeEvents(existing, newEvts) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// UPLOAD PANEL
+// ──────────────────────────────────────────────────────────────────────────
+function toggleUpload() {
+  const section = document.getElementById('upload-section');
+  const btn     = document.getElementById('upload-toggle-btn');
+  const open    = section.style.display === 'none';
+  section.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '✕ Cerrar' : '📤 Subir chat';
+}
+
+function closeUpload() {
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('upload-toggle-btn').textContent = '📤 Subir chat';
+  document.getElementById('parse-result').style.display = 'none';
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // FILE UPLOAD HANDLING
 // ──────────────────────────────────────────────────────────────────────────
 const fileInput = document.getElementById('fileInput');
@@ -536,7 +599,7 @@ async function confirmSave() {
   if (ok) {
     appData = data;
     pendingEvts = null;
-    document.getElementById('parse-result').style.display = 'none';
+    closeUpload();
     renderAll();
     showToast(`✅ ${added} nuevos eventos guardados`, 'success');
   }
@@ -545,7 +608,7 @@ async function confirmSave() {
 // ──────────────────────────────────────────────────────────────────────────
 // DATA AGGREGATION HELPERS
 // ──────────────────────────────────────────────────────────────────────────
-function allEvents() {
+function allEventsRaw() {
   const out = [];
   for (const [member, entries] of Object.entries(appData.members || {})) {
     for (const e of entries) {
@@ -556,12 +619,22 @@ function allEvents() {
   return out.sort((a,b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
 }
 
+function allEvents() {
+  const raw = allEventsRaw();
+  return activeFilter ? raw.filter(e => matchesFilter(e.date)) : raw;
+}
+
+function memberEntries(member) {
+  const entries = appData.members[member] || [];
+  return activeFilter ? entries.filter(e => matchesFilter(e.date)) : entries;
+}
+
 function memberTotal(member) {
-  return (appData.members[member] || []).reduce((s,e) => s + (e.count||1), 0);
+  return memberEntries(member).reduce((s,e) => s + (e.count||1), 0);
 }
 
 function memberStats(member) {
-  const entries = appData.members[member] || [];
+  const entries = memberEntries(member);
   const total   = entries.reduce((s,e) => s + (e.count||1), 0);
   if (!total) return null;
 
@@ -589,6 +662,63 @@ function memberStats(member) {
     topHour:        topHr  ? parseInt(topHr[0]) : null,
     latest:         entries[entries.length - 1],
   };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// FILTER
+// ──────────────────────────────────────────────────────────────────────────
+function parseFilter(query) {
+  const q = query.trim();
+  if (!q) return null;
+  const parsed = q.split('+')
+    .map(t => t.trim()).filter(Boolean)
+    .map(term =>
+      term.split(/\s+/).filter(Boolean)
+        .map(token => {
+          const t = token.toLowerCase();
+          if (MONTH_NAMES[t] !== undefined) return { type: 'month', value: MONTH_NAMES[t], label: t };
+          if (/^\d{4}$/.test(t))            return { type: 'year',  value: parseInt(t),    label: t };
+          return null;
+        }).filter(Boolean)
+    ).filter(t => t.length > 0);
+  return parsed.length ? parsed : null;
+}
+
+function matchesFilter(dateStr) {
+  if (!activeFilter) return true;
+  const [y, m] = dateStr.split('-').map(Number);
+  return activeFilter.some(term =>
+    term.every(cond => cond.type === 'year' ? y === cond.value : m === cond.value)
+  );
+}
+
+function onFilterChange(value) {
+  activeFilter = parseFilter(value);
+  document.getElementById('filter-clear').style.display = value.trim() ? 'block' : 'none';
+  updateFilterChips();
+  renderAll();
+}
+
+function clearFilter() {
+  document.getElementById('filter-input').value = '';
+  document.getElementById('filter-clear').style.display = 'none';
+  activeFilter = null;
+  updateFilterChips();
+  renderAll();
+}
+
+function updateFilterChips() {
+  const el = document.getElementById('filter-chips');
+  if (!activeFilter) { el.innerHTML = ''; return; }
+  const parts = [];
+  activeFilter.forEach((term, i) => {
+    if (i > 0) parts.push('<span class="chip-or">+</span>');
+    parts.push(`<span class="chip">${escHtml(term.map(c => c.label).join(' '))}</span>`);
+  });
+  const total    = allEventsRaw().length;
+  const filtered = allEvents().length;
+  parts.push(`<span class="filter-count">${filtered.toLocaleString()} de ${total.toLocaleString()} eventos</span>`);
+  el.innerHTML = parts.join('');
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -706,19 +836,29 @@ function renderHeatmap() {
   const maxV  = Math.max(...Object.values(dayCt), 1);
 
   const today = new Date();
-  const start = new Date(today);
-  start.setDate(today.getDate() - 364);
-  // Align to Monday
+  let start, end;
+  if (activeFilter && evts.length > 0) {
+    const ds = evts.map(e => e.date).sort();
+    start = new Date(ds[0] + 'T12:00');
+    end   = new Date(ds[ds.length - 1] + 'T12:00');
+    // Cap to 2 years
+    const cap = new Date(start); cap.setFullYear(cap.getFullYear() + 2);
+    if (end > cap) end = cap;
+  } else {
+    start = new Date(today); start.setDate(today.getDate() - 364);
+    end   = today;
+  }
+  // Align start to Monday
   while (start.getDay() !== 1) start.setDate(start.getDate() - 1);
 
   // Build weeks array
   const weeks = [];
   const cur   = new Date(start);
-  while (cur <= today) {
+  while (cur <= end) {
     const week = [];
     for (let i = 0; i < 7; i++) {
       const ds = cur.toISOString().split('T')[0];
-      week.push({ ds, count: dayCt[ds] || 0, future: cur > today, month: cur.getMonth() });
+      week.push({ ds, count: dayCt[ds] || 0, future: cur > end, month: cur.getMonth() });
       cur.setDate(cur.getDate() + 1);
     }
     weeks.push(week);
@@ -804,13 +944,25 @@ function renderMemberCards() {
 // RENDER ALL
 // ──────────────────────────────────────────────────────────────────────────
 function renderAll() {
-  const has = Object.keys(appData.members || {}).length > 0 &&
-              allEvents().length > 0;
+  const hasAnyData = allEventsRaw().length > 0;
+  const evts       = allEvents();
+  const has        = evts.length > 0;
 
+  document.getElementById('filter-bar').style.display      = hasAnyData ? 'block' : 'none';
   document.getElementById('stats-section').style.display   = has ? 'block' : 'none';
   document.getElementById('charts-section').style.display  = has ? 'block' : 'none';
   document.getElementById('members-section').style.display = has ? 'block' : 'none';
-  document.getElementById('empty-state').style.display     = has ? 'none'  : 'block';
+
+  const emptyEl = document.getElementById('empty-state');
+  if (!hasAnyData) {
+    emptyEl.style.display = 'block';
+    emptyEl.innerHTML = '<div style="font-size:4rem;margin-bottom:16px;">💩</div><div style="font-size:1.05rem;">Sube una exportación de WhatsApp para empezar</div>';
+  } else if (!has) {
+    emptyEl.style.display = 'block';
+    emptyEl.innerHTML = '<div style="font-size:3rem;margin-bottom:12px;">🔍</div><div style="font-size:1.05rem;">Sin resultados para este filtro</div>';
+  } else {
+    emptyEl.style.display = 'none';
+  }
 
   if (!has) return;
   renderStats();
