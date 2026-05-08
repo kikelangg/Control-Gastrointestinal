@@ -686,8 +686,15 @@ function toggleUpload() {
   const section = document.getElementById('upload-section');
   const btn     = document.getElementById('upload-toggle-btn');
   const open    = section.style.display === 'none';
-  section.style.display = open ? 'block' : 'none';
-  btn.textContent = open ? '✕ Cerrar' : '📤 Subir chat';
+  if (!open) {
+    section.style.display = 'none';
+    btn.textContent = '📤 Subir chat';
+    return;
+  }
+  openPwModal(() => {
+    section.style.display = 'block';
+    btn.textContent = '✕ Cerrar';
+  });
 }
 
 function closeUpload() {
@@ -760,16 +767,14 @@ function openPwModal(callback) {
   setTimeout(() => document.getElementById('pw-input').focus(), 50);
 }
 
-function confirmSave() {
+async function confirmSave() {
   if (!pendingEvts) return;
-  openPwModal(async () => {
-    const suggestions = detectDuplicates(pendingEvts, appData);
-    if (suggestions.length > 0) {
-      showMappingModal(suggestions);
-    } else {
-      await doSave(pendingEvts);
-    }
-  });
+  const suggestions = detectDuplicates(pendingEvts, appData);
+  if (suggestions.length > 0) {
+    showMappingModal(suggestions);
+  } else {
+    await doSave(pendingEvts);
+  }
 }
 
 function pwCancel() {
@@ -819,15 +824,20 @@ function toggleSettings() {
   const section = document.getElementById('settings-section');
   const btn     = document.getElementById('settings-toggle-btn');
   const open    = section.style.display === 'none';
-  if (open) {
+  if (!open) {
+    section.style.display = 'none';
+    btn.textContent = '⚙️ Ajustes';
+    return;
+  }
+  openPwModal(() => {
     settingsEdit = {
       aliases: { ...appData.aliases },
       hidden:  [...appData.hidden],
     };
     renderSettingsList();
-  }
-  section.style.display = open ? 'block' : 'none';
-  btn.textContent = open ? '✕ Cerrar ajustes' : '⚙️ Ajustes';
+    section.style.display = 'block';
+    btn.textContent = '✕ Cerrar ajustes';
+  });
 }
 
 function renderSettingsList() {
@@ -925,16 +935,14 @@ async function saveSettings(aliases, hidden) {
   }
 }
 
-function saveSettingsWithPw() {
-  openPwModal(async () => {
-    const result = await saveSettings(settingsEdit.aliases, settingsEdit.hidden);
-    if (!result) return;
-    appData.aliases = settingsEdit.aliases;
-    appData.hidden  = settingsEdit.hidden;
-    renderAll();
-    renderSettingsList();
-    showToast('✅ Ajustes guardados', 'success');
-  });
+async function saveSettingsWithPw() {
+  const result = await saveSettings(settingsEdit.aliases, settingsEdit.hidden);
+  if (!result) return;
+  appData.aliases = settingsEdit.aliases;
+  appData.hidden  = settingsEdit.hidden;
+  renderAll();
+  renderSettingsList();
+  showToast('✅ Ajustes guardados', 'success');
 }
 
 // ──────────────────────────────────────────────────────────────────────────
