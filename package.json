@@ -1,6 +1,6 @@
 {
   "name": "gastrotracker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Control gastrointestinal de grupo — parsea exports de WhatsApp y grafica estadísticas de 💩",
   "private": true,
   "scripts": {

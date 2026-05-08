@@ -7,9 +7,9 @@ const htmlPath = path.join(root, 'index.html');
 
 let html = fs.readFileSync(htmlPath, 'utf8');
 
-// Replace content of <span id="app-version">...</span>
+// Replace content of <span id="app-version" ...>...</span>
 const updated = html.replace(
-  /(<span id="app-version">)[^<]*(<\/span>)/,
+  /(<span id="app-version"[^>]*>)[^<]*(<\/span>)/,
   `$1v${pkg.version}$2`
 );
 
