@@ -13,7 +13,7 @@
  */
 
 const FILENAME   = 'gastro-data.json';
-const EMPTY_DATA = { version: 1, members: {}, lastUpdated: null };
+const EMPTY_DATA = { version: 1, members: {}, aliases: {}, hidden: [], lastUpdated: null };
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -55,7 +55,24 @@ export default {
       try { body = await request.json(); }
       catch { return json({ error: 'Invalid JSON body' }, 400); }
 
-      const events = body?.events;
+      const events   = body?.events;
+      const settings = body?.settings;
+
+      // Settings-only update (rename aliases / hidden list)
+      if (settings !== undefined && !events) {
+        const current = await readGist(GIST_ID, ghHeaders);
+        if (current.error) return json({ error: current.error }, current.status || 500);
+        const updated = {
+          ...current,
+          aliases:     settings.aliases ?? current.aliases ?? {},
+          hidden:      settings.hidden  ?? current.hidden  ?? [],
+          lastUpdated: new Date().toISOString(),
+        };
+        const saveErr = await writeGist(GIST_ID, ghHeaders, updated);
+        if (saveErr) return json({ error: saveErr }, 500);
+        return json({ success: true, type: 'settings' });
+      }
+
       if (!Array.isArray(events) || events.length === 0) {
         return json({ error: 'Body must contain a non-empty events array' }, 400);
       }
@@ -111,7 +128,13 @@ async function readGist(gistId, headers) {
   try {
     const parsed = JSON.parse(content);
     return (parsed && typeof parsed === 'object' && parsed.members)
-      ? { version: parsed.version || 1, members: parsed.members, lastUpdated: parsed.lastUpdated || null }
+      ? {
+          version:     parsed.version || 1,
+          members:     parsed.members,
+          aliases:     parsed.aliases  || {},
+          hidden:      parsed.hidden   || [],
+          lastUpdated: parsed.lastUpdated || null,
+        }
       : { ...EMPTY_DATA };
   } catch {
     return { ...EMPTY_DATA };
@@ -158,6 +181,8 @@ function mergeEvents(existing, newEvents) {
   const data = {
     version:     existing.version || 1,
     members:     JSON.parse(JSON.stringify(existing.members || {})),
+    aliases:     existing.aliases || {},
+    hidden:      existing.hidden  || [],
     lastUpdated: existing.lastUpdated,
   };
 

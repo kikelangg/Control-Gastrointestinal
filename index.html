@@ -222,6 +222,58 @@
       .charts-2 { grid-template-columns: 1fr; }
       .stats-grid { grid-template-columns: 1fr 1fr; }
     }
+
+    /* Small button variant */
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+
+    /* Settings panel */
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-radius: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row.is-hidden { opacity: 0.45; }
+    .settings-name { font-weight: 600; font-size: 0.92rem; }
+    .settings-alias { font-size: 0.78rem; color: var(--muted); margin-top: 1px; }
+    .settings-rename-input {
+      background: var(--bg); border: 1px solid var(--accent);
+      border-radius: 6px; color: var(--text); font-size: 0.92rem; font-weight: 600;
+      padding: 4px 10px; width: 200px; font-family: inherit;
+    }
+    .settings-rename-input:focus { outline: none; }
+
+    /* Mapping modal */
+    #map-modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      z-index: 500; align-items: center; justify-content: center;
+    }
+    #map-modal-overlay.open { display: flex; }
+    #map-modal {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 28px 32px; width: min(600px, 95vw); display: flex; flex-direction: column; gap: 14px;
+      max-height: 85vh; overflow-y: auto;
+    }
+    #map-modal h3 { font-size: 1.05rem; color: var(--text); }
+    .map-row {
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .map-names { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .map-name { font-weight: 700; }
+    .map-name-new  { color: var(--accent2); }
+    .map-name-existing { color: var(--text); }
+    .map-badge {
+      font-size: 0.72rem; background: var(--accent); color: #fff;
+      border-radius: 100px; padding: 2px 9px; font-weight: 600;
+    }
+    .map-actions { display: flex; gap: 8px; }
+    .map-btn {
+      flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); font-size: 0.82rem; cursor: pointer;
+      text-align: center; transition: all 0.15s; font-family: inherit; font-weight: 500;
+    }
+    .map-btn.selected { border-color: var(--accent); background: rgba(196,105,30,0.15); color: var(--text); }
   </style>
 </head>
 <body>
@@ -241,6 +293,7 @@
     </div>
     <div style="display:flex;align-items:center;gap:10px;">
       <span id="conn-status">⚪ Sin conectar</span>
+      <button class="btn btn-ghost" id="settings-toggle-btn" onclick="toggleSettings()">⚙️ Ajustes</button>
       <button class="btn btn-primary" id="upload-toggle-btn" onclick="toggleUpload()">📤 Subir chat</button>
     </div>
   </div>
@@ -266,6 +319,18 @@
     <input type="file" id="fileInput" accept=".txt" style="display:none;" onchange="onFileSelect(event)">
 
     <div id="parse-result"></div>
+  </section>
+
+  <!-- Settings -->
+  <section id="settings-section" style="display:none;margin-bottom:28px;">
+    <div class="card" style="padding:24px;">
+      <div class="section-title" style="margin-bottom:16px;">⚙️ Configuración de miembros</div>
+      <div id="settings-member-list"></div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="toggleSettings()">Cerrar</button>
+        <button class="btn btn-primary" id="settings-save-btn" onclick="saveSettingsWithPw()">💾 Guardar cambios</button>
+      </div>
+    </div>
   </section>
 
   <!-- Filter bar -->
@@ -379,6 +444,21 @@
   </div>
 </div>
 
+<!-- ═══ MAPPING MODAL ══════════════════════════════════════════════════════ -->
+<div id="map-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="map-modal-title">
+  <div id="map-modal">
+    <h3 id="map-modal-title">🔀 Miembros similares detectados</h3>
+    <p style="font-size:0.85rem;color:var(--muted);">
+      Los siguientes nombres del archivo nuevo parecen ser la misma persona que ya existe en la base de datos, guardados con otro nombre. Elegí qué hacer con cada uno antes de importar.
+    </p>
+    <div id="map-list"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
+      <button class="btn btn-ghost" onclick="mappingCancel()">✕ Cancelar importación</button>
+      <button class="btn btn-primary" onclick="mappingConfirm()">✅ Confirmar importación</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ SCRIPTS ═══════════════════════════════════════════════════════════ -->
 <script>
 // ──────────────────────────────────────────────────────────────────────────
@@ -412,10 +492,13 @@ const MONTH_NAMES = {
 // ──────────────────────────────────────────────────────────────────────────
 // STATE
 // ──────────────────────────────────────────────────────────────────────────
-let appData      = { version: 1, members: {}, lastUpdated: null };
-let charts       = {};
-let pendingEvts  = null;
-let activeFilter = null; // null | Array<Array<{type,value,label}>>
+let appData         = { version: 1, members: {}, aliases: {}, hidden: [], lastUpdated: null };
+let charts          = {};
+let pendingEvts     = null;
+let pendingMappings = [];
+let activeFilter    = null; // null | Array<Array<{type,value,label}>>
+let pwCallback      = null;
+let settingsEdit    = { aliases: {}, hidden: [] }; // working copy while settings panel is open
 
 // ──────────────────────────────────────────────────────────────────────────
 // PROXY / GIST API
@@ -433,8 +516,8 @@ async function loadData() {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     appData = (d && typeof d === 'object' && d.members)
-      ? { version: d.version || 1, members: d.members, lastUpdated: d.lastUpdated || null }
-      : { version: 1, members: {}, lastUpdated: null };
+      ? { version: d.version || 1, members: d.members, aliases: d.aliases || {}, hidden: d.hidden || [], lastUpdated: d.lastUpdated || null }
+      : { version: 1, members: {}, aliases: {}, hidden: [], lastUpdated: null };
     console.log('[GT] raw response:', JSON.stringify(d).slice(0, 300));
     console.log('[GT] appData.members keys:', Object.keys(appData.members || {}));
     setConnStatus('ok');
@@ -458,6 +541,19 @@ async function saveData(events) {
     showToast('Error al guardar: ' + e.message, 'error');
     return null;
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// MEMBER HELPERS
+// ──────────────────────────────────────────────────────────────────────────
+function displayName(member) {
+  return (appData.aliases || {})[member] || member;
+}
+function isHidden(member) {
+  return (appData.hidden || []).includes(member);
+}
+function visibleMembers() {
+  return Object.keys(appData.members || {}).filter(m => !isHidden(m));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -632,16 +728,29 @@ async function processFile(file) {
 
 const SAVE_PASSWORD = 'mate';
 
-function confirmSave() {
-  if (!pendingEvts) return;
+function openPwModal(callback) {
+  pwCallback = callback;
   document.getElementById('pw-input').value = '';
   document.getElementById('pw-error').textContent = '';
   document.getElementById('pw-modal-overlay').classList.add('open');
   setTimeout(() => document.getElementById('pw-input').focus(), 50);
 }
 
+function confirmSave() {
+  if (!pendingEvts) return;
+  openPwModal(async () => {
+    const suggestions = detectDuplicates(pendingEvts, appData);
+    if (suggestions.length > 0) {
+      showMappingModal(suggestions);
+    } else {
+      await doSave(pendingEvts);
+    }
+  });
+}
+
 function pwCancel() {
   document.getElementById('pw-modal-overlay').classList.remove('open');
+  pwCallback = null;
 }
 
 async function pwSubmit() {
@@ -653,9 +762,13 @@ async function pwSubmit() {
     return;
   }
   document.getElementById('pw-modal-overlay').classList.remove('open');
-  if (!pendingEvts) return;
+  const cb = pwCallback;
+  pwCallback = null;
+  if (cb) await cb();
+}
 
-  const result = await saveData(pendingEvts);
+async function doSave(evts) {
+  const result = await saveData(evts);
   if (!result) return;
 
   if (result.added === 0) {
@@ -666,16 +779,243 @@ async function pwSubmit() {
     return;
   }
 
-  // Apply merge locally for instant feedback
-  const { data } = mergeEvents(appData, pendingEvts);
+  const { data } = mergeEvents(appData, evts);
   appData = data;
   pendingEvts = null;
   closeUpload();
   renderAll();
   showToast(`✅ ${result.added} nuevos eventos guardados`, 'success');
-
-  // Background sync to stay in sync with the Gist
   loadData();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SETTINGS PANEL
+// ──────────────────────────────────────────────────────────────────────────
+function toggleSettings() {
+  const section = document.getElementById('settings-section');
+  const btn     = document.getElementById('settings-toggle-btn');
+  const open    = section.style.display === 'none';
+  if (open) {
+    settingsEdit = {
+      aliases: { ...appData.aliases },
+      hidden:  [...appData.hidden],
+    };
+    renderSettingsList();
+  }
+  section.style.display = open ? 'block' : 'none';
+  btn.textContent = open ? '✕ Cerrar ajustes' : '⚙️ Ajustes';
+}
+
+function renderSettingsList() {
+  const all = Object.keys(appData.members || {}).sort((a,b) =>
+    displayName(a).localeCompare(displayName(b))
+  );
+  if (!all.length) {
+    document.getElementById('settings-member-list').innerHTML =
+      '<p style="color:var(--muted);font-size:0.88rem;">No hay miembros todavía.</p>';
+    return;
+  }
+  document.getElementById('settings-member-list').innerHTML = all.map((m, i) => {
+    const alias   = settingsEdit.aliases[m] || '';
+    const hidden  = settingsEdit.hidden.includes(m);
+    const showName = alias || m;
+    return `
+    <div class="settings-row${hidden ? ' is-hidden' : ''}" id="srow-${i}" data-key="${escHtml(m)}">
+      <div id="srow-display-${i}" style="display:flex;align-items:center;gap:10px;flex:1;">
+        <div>
+          <div class="settings-name">${escHtml(showName)}</div>
+          ${alias ? `<div class="settings-alias">Clave: ${escHtml(m)}</div>` : ''}
+        </div>
+      </div>
+      <div id="srow-edit-${i}" style="display:none;flex:1;">
+        <input class="settings-rename-input" id="sinput-${i}" value="${escHtml(showName)}"
+          onkeydown="if(event.key==='Enter')confirmRename(${i});if(event.key==='Escape')cancelRename(${i})">
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn btn-ghost btn-sm" id="srow-edit-btn-${i}" onclick="startRename(${i})">✏️ Renombrar</button>
+        <button class="btn btn-ghost btn-sm" id="srow-confirm-btn-${i}" onclick="confirmRename(${i})" style="display:none;">✓</button>
+        <button class="btn btn-ghost btn-sm" id="srow-cancel-btn-${i}" onclick="cancelRename(${i})" style="display:none;">✕</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleHiddenEdit(${i})">
+          ${hidden ? '👁️ Mostrar' : '🙈 Ocultar'}
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function startRename(i) {
+  document.getElementById(`srow-display-${i}`).style.display   = 'none';
+  document.getElementById(`srow-edit-${i}`).style.display      = 'flex';
+  document.getElementById(`srow-edit-btn-${i}`).style.display  = 'none';
+  document.getElementById(`srow-confirm-btn-${i}`).style.display = 'inline-flex';
+  document.getElementById(`srow-cancel-btn-${i}`).style.display  = 'inline-flex';
+  document.getElementById(`sinput-${i}`).focus();
+}
+
+function cancelRename(i) {
+  document.getElementById(`srow-display-${i}`).style.display   = 'flex';
+  document.getElementById(`srow-edit-${i}`).style.display      = 'none';
+  document.getElementById(`srow-edit-btn-${i}`).style.display  = 'inline-flex';
+  document.getElementById(`srow-confirm-btn-${i}`).style.display = 'none';
+  document.getElementById(`srow-cancel-btn-${i}`).style.display  = 'none';
+}
+
+function confirmRename(i) {
+  const row      = document.getElementById(`srow-${i}`);
+  const key      = row.dataset.key;
+  const newName  = document.getElementById(`sinput-${i}`).value.trim();
+  if (!newName) return;
+
+  if (newName === key) {
+    delete settingsEdit.aliases[key];
+  } else {
+    settingsEdit.aliases[key] = newName;
+  }
+  renderSettingsList(); // re-render to reflect change
+}
+
+function toggleHiddenEdit(i) {
+  const row = document.getElementById(`srow-${i}`);
+  const key = row.dataset.key;
+  const idx = settingsEdit.hidden.indexOf(key);
+  if (idx === -1) {
+    settingsEdit.hidden.push(key);
+  } else {
+    settingsEdit.hidden.splice(idx, 1);
+  }
+  renderSettingsList();
+}
+
+async function saveSettings(aliases, hidden) {
+  try {
+    const r = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { aliases, hidden } }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch(e) {
+    showToast('Error al guardar ajustes: ' + e.message, 'error');
+    return null;
+  }
+}
+
+function saveSettingsWithPw() {
+  openPwModal(async () => {
+    const result = await saveSettings(settingsEdit.aliases, settingsEdit.hidden);
+    if (!result) return;
+    appData.aliases = settingsEdit.aliases;
+    appData.hidden  = settingsEdit.hidden;
+    renderAll();
+    renderSettingsList();
+    showToast('✅ Ajustes guardados', 'success');
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// NAME DEDUPLICATION
+// ──────────────────────────────────────────────────────────────────────────
+function detectDuplicates(newEvts, existingData) {
+  const newMembers = {};
+  for (const evt of newEvts) {
+    if (!newMembers[evt.author]) newMembers[evt.author] = new Set();
+    newMembers[evt.author].add(`${evt.date}|${evt.time}`);
+  }
+
+  const existMembers = {};
+  for (const [name, entries] of Object.entries(existingData.members || {})) {
+    existMembers[name] = new Set(entries.map(e => `${e.date}|${e.time}`));
+  }
+
+  const suggestions = [];
+  for (const [newName, newKeys] of Object.entries(newMembers)) {
+    if (existMembers[newName]) continue; // exact name already exists, no rename needed
+
+    let bestSim = 0, bestMatch = null;
+    for (const [existName, existKeys] of Object.entries(existMembers)) {
+      const minSize = Math.min(newKeys.size, existKeys.size);
+      if (minSize === 0) continue;
+      let overlap = 0;
+      for (const k of newKeys) { if (existKeys.has(k)) overlap++; }
+      const sim = overlap / minSize;
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestMatch = { existName, overlap, existCount: existKeys.size };
+      }
+    }
+
+    if (bestMatch && bestSim >= 0.4) {
+      suggestions.push({
+        newName,
+        existingName: bestMatch.existName,
+        similarity:   bestSim,
+        overlapCount: bestMatch.overlap,
+        newCount:     newKeys.size,
+        existingCount: bestMatch.existCount,
+        merge: true,
+      });
+    }
+  }
+  return suggestions;
+}
+
+function showMappingModal(suggestions) {
+  pendingMappings = suggestions;
+  document.getElementById('map-list').innerHTML = suggestions.map((s, i) => `
+    <div class="map-row">
+      <div class="map-names">
+        <span class="map-name map-name-new">"${escHtml(s.newName)}"</span>
+        <span style="color:var(--muted);">→</span>
+        <span class="map-name map-name-existing">"${escHtml(s.existingName)}"</span>
+        <span class="map-badge">${Math.round(s.similarity * 100)}% coincidencia</span>
+      </div>
+      <div style="font-size:0.78rem;color:var(--muted);">
+        ${s.overlapCount} evento${s.overlapCount !== 1 ? 's' : ''} en común &nbsp;·&nbsp;
+        ${s.newCount} en el archivo &nbsp;·&nbsp; ${s.existingCount} en la base
+      </div>
+      <div class="map-actions">
+        <button class="map-btn selected" id="map-merge-${i}" onclick="setMapAction(${i},true)">
+          🔀 Fusionar en "${escHtml(s.existingName)}"
+        </button>
+        <button class="map-btn" id="map-new-${i}" onclick="setMapAction(${i},false)">
+          ➕ Crear como miembro nuevo
+        </button>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('map-modal-overlay').classList.add('open');
+}
+
+function setMapAction(idx, merge) {
+  pendingMappings[idx].merge = merge;
+  document.getElementById(`map-merge-${idx}`).classList.toggle('selected', merge);
+  document.getElementById(`map-new-${idx}`).classList.toggle('selected', !merge);
+}
+
+function mappingCancel() {
+  document.getElementById('map-modal-overlay').classList.remove('open');
+  pendingEvts     = null;
+  pendingMappings = [];
+  showToast('Importación cancelada', 'info');
+}
+
+async function mappingConfirm() {
+  document.getElementById('map-modal-overlay').classList.remove('open');
+  if (!pendingEvts) return;
+
+  const renames = {};
+  for (const m of pendingMappings) {
+    if (m.merge) renames[m.newName] = m.existingName;
+  }
+
+  const renamedEvts = pendingEvts.map(evt => {
+    const author = renames[evt.author] || evt.author;
+    return { ...evt, author, key: `${author}|${evt.date}|${evt.time}` };
+  });
+
+  pendingMappings = [];
+  await doSave(renamedEvts);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -684,6 +1024,7 @@ async function pwSubmit() {
 function allEventsRaw() {
   const out = [];
   for (const [member, entries] of Object.entries(appData.members || {})) {
+    if (isHidden(member)) continue;
     for (const e of entries) {
       const n = e.count || 1;
       for (let i = 0; i < n; i++) out.push({ member, date: e.date, time: e.time });
@@ -764,7 +1105,7 @@ function parseFilter(query) {
 function matchesFilter(dateStr, memberName) {
   if (!activeFilter) return true;
   const [y, m] = dateStr.split('-').map(Number);
-  const nameLow = (memberName || '').toLowerCase();
+  const nameLow = displayName(memberName || '').toLowerCase();
   return activeFilter.some(term =>
     term.every(cond => {
       if (cond.type === 'year')   return y === cond.value;
@@ -809,7 +1150,7 @@ function updateFilterChips() {
 // ──────────────────────────────────────────────────────────────────────────
 function renderStats() {
   const evts    = allEvents();
-  const members = Object.keys(appData.members || {});
+  const members = visibleMembers();
   if (!evts.length) return;
 
   document.getElementById('s-total').textContent   = evts.length.toLocaleString();
@@ -817,7 +1158,7 @@ function renderStats() {
 
   const sorted  = [...members].sort((a,b) => memberTotal(b) - memberTotal(a));
   const champ   = sorted[0];
-  document.getElementById('s-champ').textContent   = champ ? champ.split(' ')[0] : '—';
+  document.getElementById('s-champ').textContent   = champ ? displayName(champ).split(' ')[0] : '—';
 
   const dates   = evts.map(e => e.date).sort();
   const first   = new Date(dates[0] + 'T12:00');
@@ -854,8 +1195,8 @@ function mkChart(id, type, labels, datasets, options = {}) {
 }
 
 function renderRankChart() {
-  const members = Object.keys(appData.members || {});
-  const data    = members.map(m => ({ name: m, v: memberTotal(m) })).sort((a,b) => b.v - a.v);
+  const members = visibleMembers();
+  const data    = members.map(m => ({ name: displayName(m), v: memberTotal(m) })).sort((a,b) => b.v - a.v);
   mkChart('chart-rank', 'bar',
     data.map(d => d.name),
     [{ data: data.map(d => d.v), backgroundColor: data.map((_,i) => CHART_PALETTE[i % CHART_PALETTE.length]), borderRadius: 5 }],
@@ -891,7 +1232,7 @@ const MEMBER_COLORS = [
 ];
 
 function renderMemberTimelineChart() {
-  const members = Object.keys(appData.members || {});
+  const members = visibleMembers();
   if (!members.length) return;
 
   const weekKey = date => {
@@ -917,7 +1258,7 @@ function renderMemberTimelineChart() {
   const datasets = members.map((member, i) => {
     const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
     return {
-      label: member,
+      label: displayName(member),
       data: labels.map(k => memberWeekly[member][k] || 0),
       borderColor: color,
       backgroundColor: color + '22',
@@ -1043,7 +1384,7 @@ function renderHeatmap() {
 // MEMBER CARDS
 // ──────────────────────────────────────────────────────────────────────────
 function renderMemberCards() {
-  const members = Object.keys(appData.members || {});
+  const members = visibleMembers();
   const sorted  = [...members].sort((a,b) => memberTotal(b) - memberTotal(a));
   const maxTot  = Math.max(...sorted.map(memberTotal), 1);
   const medals  = ['🥇','🥈','🥉'];
@@ -1060,7 +1401,7 @@ function renderMemberCards() {
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-size:1.4rem;">${rank}</span>
             <div>
-              <div style="font-weight:700;">${escHtml(m)}</div>
+              <div style="font-weight:700;">${escHtml(displayName(m))}</div>
               <div style="font-size:0.75rem;color:var(--muted);">desde ${fmtDate(st.firstDate)}</div>
             </div>
           </div>
