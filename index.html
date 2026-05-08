@@ -395,6 +395,8 @@ async function loadData() {
     appData = (d && typeof d === 'object' && d.members)
       ? { version: d.version || 1, members: d.members, lastUpdated: d.lastUpdated || null }
       : { version: 1, members: {}, lastUpdated: null };
+    console.log('[GT] raw response:', JSON.stringify(d).slice(0, 300));
+    console.log('[GT] appData.members keys:', Object.keys(appData.members || {}));
     setConnStatus('ok');
     renderAll();
   } catch(e) {
@@ -596,6 +598,9 @@ async function confirmSave() {
 
   if (result.added === 0) {
     showToast('Todos los eventos ya estaban registrados (sin duplicados)', 'info');
+    closeUpload();
+    pendingEvts = null;
+    loadData();
     return;
   }
 
