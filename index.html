@@ -133,6 +133,26 @@
     .mini-label { color: var(--muted); font-size: 0.75rem; margin-bottom: 2px; }
 
     /* Toast */
+    /* Password modal */
+    #pw-modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+      z-index: 400; align-items: center; justify-content: center;
+    }
+    #pw-modal-overlay.open { display: flex; }
+    #pw-modal {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 28px 32px; width: min(360px, 92vw); display: flex; flex-direction: column; gap: 16px;
+    }
+    #pw-modal h3 { font-size: 1.05rem; color: var(--text); }
+    #pw-modal .hint { font-size: 0.82rem; color: var(--muted); font-style: italic; }
+    #pw-modal input[type=password] {
+      width: 100%; padding: 9px 13px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg);
+      color: var(--text); font-size: 1rem;
+    }
+    #pw-modal input[type=password]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+    #pw-modal .pw-error { color: #f0a8a8; font-size: 0.82rem; min-height: 1.1em; }
+    #pw-modal .pw-actions { display: flex; gap: 10px; justify-content: flex-end; }
     #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 300; display: flex; flex-direction: column; gap: 8px; }
     .toast {
       padding: 11px 18px; border-radius: 8px; font-size: 0.88rem; font-weight: 500;
@@ -307,6 +327,10 @@
         <canvas id="chart-weekday"></canvas>
       </div>
     </div>
+    <div class="card chart-card">
+      <div class="chart-title">👥 Actividad semanal por miembro</div>
+      <canvas id="chart-members-timeline"></canvas>
+    </div>
     <div class="card chart-card" style="margin-bottom:0;">
       <div class="chart-title">🗓️ Mapa de calor — último año</div>
       <div class="heatmap-wrap" id="heatmap"></div>
@@ -338,6 +362,21 @@
 
 <!-- ═══ TOAST ══════════════════════════════════════════════════════════════ -->
 <div id="toast-container"></div>
+
+<!-- ═══ PASSWORD MODAL ════════════════════════════════════════════════════ -->
+<div id="pw-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="pw-modal-title">
+  <div id="pw-modal">
+    <h3 id="pw-modal-title">🔒 Confirmar guardado</h3>
+    <p class="hint">Pista: "Lo que se pone cuando caga al mismo tiempo que otro"</p>
+    <input type="password" id="pw-input" placeholder="Contraseña" autocomplete="off"
+           onkeydown="if(event.key==='Enter')pwSubmit();if(event.key==='Escape')pwCancel()">
+    <div class="pw-error" id="pw-error"></div>
+    <div class="pw-actions">
+      <button class="btn btn-ghost" onclick="pwCancel()">Cancelar</button>
+      <button class="btn btn-primary" onclick="pwSubmit()">Guardar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ SCRIPTS ═══════════════════════════════════════════════════════════ -->
 <script>
@@ -590,7 +629,29 @@ async function processFile(file) {
   `;
 }
 
-async function confirmSave() {
+const SAVE_PASSWORD = 'mate';
+
+function confirmSave() {
+  if (!pendingEvts) return;
+  document.getElementById('pw-input').value = '';
+  document.getElementById('pw-error').textContent = '';
+  document.getElementById('pw-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('pw-input').focus(), 50);
+}
+
+function pwCancel() {
+  document.getElementById('pw-modal-overlay').classList.remove('open');
+}
+
+async function pwSubmit() {
+  const input = document.getElementById('pw-input');
+  if (input.value !== SAVE_PASSWORD) {
+    document.getElementById('pw-error').textContent = 'Contraseña incorrecta';
+    input.value = '';
+    input.focus();
+    return;
+  }
+  document.getElementById('pw-modal-overlay').classList.remove('open');
   if (!pendingEvts) return;
 
   const result = await saveData(pendingEvts);
@@ -662,12 +723,16 @@ function memberStats(member) {
   const topDay = Object.entries(dayCnt).sort((a,b) => b[1]-a[1])[0];
   const topHr  = Object.entries(hrCnt).sort((a,b) => b[1]-a[1])[0];
 
+  const daySpan = Math.max(1, Math.round(
+    (new Date(dates[dates.length-1]+'T12:00') - new Date(dates[0]+'T12:00')) / 86400000
+  ) + 1);
+
   return {
     total,
     firstDate:      dates[0],
     lastDate:       dates[dates.length - 1],
     daysActive,
-    avgPerActiveDay: (total / daysActive).toFixed(1),
+    avgPerActiveDay: (total / daySpan).toFixed(2),
     topDay:         topDay ? topDay[0] : null,
     topDayCount:    topDay ? topDay[1] : 0,
     topHour:        topHr  ? parseInt(topHr[0]) : null,
@@ -816,6 +881,64 @@ function renderTimelineChart() {
     sorted.map(([k]) => { const d = new Date(k+'T12:00'); return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`; }),
     [{ data: sorted.map(([,v]) => v), borderColor: '#c4691e', backgroundColor: 'rgba(196,105,30,0.15)', fill: true, tension: 0.35, pointRadius: 2 }],
     { scales: { x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060', maxTicksLimit: 8 } }, y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } } } }
+  );
+}
+
+const MEMBER_COLORS = [
+  '#c4691e','#4e9de8','#4ec47a','#e84e9d','#e8c44e',
+  '#9d4ee8','#4ee8c4','#e84e4e','#a0c840','#e8944e'
+];
+
+function renderMemberTimelineChart() {
+  const members = Object.keys(appData.members || {});
+  if (!members.length) return;
+
+  const weekKey = date => {
+    const d   = new Date(date + 'T12:00');
+    const dow = d.getDay();
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    return mon.toISOString().split('T')[0];
+  };
+
+  const allWeeks = new Set();
+  const memberWeekly = {};
+  for (const member of members) {
+    memberWeekly[member] = {};
+    for (const e of (appData.members[member] || [])) {
+      const k = weekKey(e.date);
+      allWeeks.add(k);
+      memberWeekly[member][k] = (memberWeekly[member][k] || 0) + (e.count || 1);
+    }
+  }
+
+  const labels = [...allWeeks].sort();
+  const datasets = members.map((member, i) => {
+    const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
+    return {
+      label: member,
+      data: labels.map(k => memberWeekly[member][k] || 0),
+      borderColor: color,
+      backgroundColor: color + '22',
+      fill: false,
+      tension: 0.35,
+      pointRadius: 2,
+      borderWidth: 2,
+    };
+  });
+
+  mkChart('chart-members-timeline', 'line',
+    labels.map(k => { const d = new Date(k+'T12:00'); return `${MONTHS_ES[d.getMonth()]} ${d.getDate()}`; }),
+    datasets,
+    {
+      scales: {
+        x: { grid: { color: '#3a2810' }, ticks: { color: '#a08060', maxTicksLimit: 10 } },
+        y: { grid: { color: '#3a2810' }, ticks: { color: '#a08060' } }
+      },
+      plugins: {
+        legend: { display: true, labels: { color: '#a08060', boxWidth: 12, padding: 14 } }
+      }
+    }
   );
 }
 
@@ -985,6 +1108,7 @@ function renderAll() {
   renderStats();
   renderRankChart();
   renderTimelineChart();
+  renderMemberTimelineChart();
   renderHoursChart();
   renderWeekdayChart();
   renderHeatmap();
